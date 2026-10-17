@@ -99,3 +99,23 @@ function generateModelOptions(provider, selectedModel = null) {
         `<option value="${model.id}"${model.id === selected ? ' selected' : ''}>${model.name}</option>`
     ).join('\n');
 }
+
+// Seed AI settings from config.local.js (window.APPSCREEN_DEFAULTS) if present.
+// Only fills values not already set in localStorage, so Settings UI changes win.
+(function seedAiDefaults() {
+    const defaults = window.APPSCREEN_DEFAULTS;
+    if (!defaults) return;
+
+    if (defaults.aiProvider && !localStorage.getItem('aiProvider')) {
+        localStorage.setItem('aiProvider', defaults.aiProvider);
+    }
+    Object.keys(llmProviders).forEach(provider => {
+        const config = llmProviders[provider];
+        if (defaults[config.storageKey] && !localStorage.getItem(config.storageKey)) {
+            localStorage.setItem(config.storageKey, defaults[config.storageKey]);
+        }
+        if (defaults[config.modelStorageKey] && !localStorage.getItem(config.modelStorageKey)) {
+            localStorage.setItem(config.modelStorageKey, defaults[config.modelStorageKey]);
+        }
+    });
+})();

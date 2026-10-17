@@ -7,6 +7,9 @@
 *.swp
 *.swo
 
+# Local config (API keys — never commit)
+config.local.js
+
 # Node
 node_modules/
 

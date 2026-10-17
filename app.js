@@ -1,11 +1,18 @@
+// LearnMe PRO supported languages (mirrors app/src/i18n/routing.ts)
+const LEARNME_LANGUAGES = ['pl', 'en', 'de', 'fr', 'es', 'it', 'nl', 'ro', 'cs', 'sv', 'pt', 'el', 'no', 'uk', 'hr', 'sl', 'et', 'lt', 'lv', 'sk', 'bg', 'fi', 'da'];
+
+function emptyLangTexts() {
+    return Object.fromEntries(LEARNME_LANGUAGES.map(lang => [lang, '']));
+}
+
 // State management
 const state = {
     screenshots: [],
     selectedIndex: 0,
     transferTarget: null, // Index of screenshot waiting to receive style transfer
     outputDevice: 'iphone-6.9',
-    currentLanguage: 'en', // Global current language for all text
-    projectLanguages: ['en'], // Languages available in this project
+    currentLanguage: 'pl', // Global current language for all text
+    projectLanguages: [...LEARNME_LANGUAGES], // Languages available in this project
     customWidth: 1290,
     customHeight: 2796,
     // Default settings applied to new screenshots
@@ -55,9 +62,9 @@ const state = {
         },
         text: {
             headlineEnabled: true,
-            headlines: { en: '' },
-            headlineLanguages: ['en'],
-            currentHeadlineLang: 'en',
+            headlines: emptyLangTexts(),
+            headlineLanguages: [...LEARNME_LANGUAGES],
+            currentHeadlineLang: 'pl',
             headlineFont: "-apple-system, BlinkMacSystemFont, 'SF Pro Display'",
             headlineSize: 100,
             headlineWeight: '600',
@@ -67,7 +74,7 @@ const state = {
             headlineColor: '#ffffff',
             perLanguageLayout: false,
             languageSettings: {
-                en: {
+                pl: {
                     headlineSize: 100,
                     subheadlineSize: 50,
                     position: 'top',
@@ -75,14 +82,14 @@ const state = {
                     lineHeight: 110
                 }
             },
-            currentLayoutLang: 'en',
+            currentLayoutLang: 'pl',
             position: 'top',
             offsetY: 12,
             lineHeight: 110,
             subheadlineEnabled: false,
-            subheadlines: { en: '' },
-            subheadlineLanguages: ['en'],
-            currentSubheadlineLang: 'en',
+            subheadlines: emptyLangTexts(),
+            subheadlineLanguages: [...LEARNME_LANGUAGES],
+            currentSubheadlineLang: 'pl',
             subheadlineFont: "-apple-system, BlinkMacSystemFont, 'SF Pro Display'",
             subheadlineSize: 50,
             subheadlineWeight: '400',
@@ -103,6 +110,116 @@ const baseTextDefaults = JSON.parse(JSON.stringify(state.defaults.text));
 let selectedElementId = null;
 let selectedPopoutId = null;
 let draggingElement = null;
+
+// Preview zoom & pan (runtime-only)
+const previewZoom = { level: 1, x: 0, y: 0 };
+let panDrag = null;
+let stripDrag = null;
+let justStripDragged = false;
+
+function applyPreviewZoom() {
+    const strip = document.querySelector('.preview-strip');
+    if (!strip) return;
+
+    const zoomed = previewZoom.level !== 1;
+    strip.classList.toggle('zoomed', zoomed);
+    strip.classList.toggle('zoomed-in', previewZoom.level > 1);
+    strip.style.setProperty('--pz', previewZoom.level);
+
+    if (!zoomed && previewZoom.x === 0 && previewZoom.y === 0) {
+        strip.style.transform = '';
+    } else {
+        strip.style.transform = `translate(${previewZoom.x}px, ${previewZoom.y}px) scale(${previewZoom.level})`;
+    }
+
+    const slider = document.getElementById('zoom-slider');
+    const label = document.getElementById('zoom-level');
+    const pct = Math.round(previewZoom.level * 100);
+    if (slider) slider.value = pct;
+    if (label) label.textContent = `${pct}%`;
+}
+
+function clampPreviewPan() {
+    if (previewZoom.level === 1) {
+        previewZoom.x = 0;
+        previewZoom.y = 0;
+        return;
+    }
+    const w = parseFloat(canvas.style.width) || canvas.width || 0;
+    const h = parseFloat(canvas.style.height) || canvas.height || 0;
+    const zoomedIn = previewZoom.level > 1;
+    const overX = Math.max(0, (previewZoom.level - 1) * w / 2);
+    const overY = Math.max(0, (previewZoom.level - 1) * h / 2);
+    const slack = zoomedIn ? 60 : 160;
+    previewZoom.x = Math.min(overX + slack, Math.max(-overX - slack, previewZoom.x));
+    previewZoom.y = Math.min(overY + slack, Math.max(-overY - slack, previewZoom.y));
+}
+
+function setPreviewZoom(newLevel, originClientX, originClientY) {
+    const area = document.querySelector('.canvas-area');
+    if (!area) return;
+    const rect = area.getBoundingClientRect();
+    const ox = rect.left + rect.width / 2;
+    const oy = rect.top + rect.height / 2;
+    const cx = originClientX !== undefined ? originClientX : ox;
+    const cy = originClientY !== undefined ? originClientY : oy;
+
+    const oldL = previewZoom.level;
+    const newL = Math.min(4, Math.max(0.1, newLevel));
+    if (newL === oldL) return;
+
+    // Keep the point under the cursor fixed while scaling around the canvas center
+    previewZoom.x = (cx - ox) - (newL / oldL) * ((cx - ox) - previewZoom.x);
+    previewZoom.y = (cy - oy) - (newL / oldL) * ((cy - oy) - previewZoom.y);
+    previewZoom.level = newL;
+
+    clampPreviewPan();
+    applyPreviewZoom();
+}
+
+function resetPreviewZoom() {
+    previewZoom.level = 1;
+    previewZoom.x = 0;
+    previewZoom.y = 0;
+    applyPreviewZoom();
+}
+
+// When switching screenshots: keep the zoomed-out overview level, only recenter.
+// Zoomed-in always snaps back to 100% for the new screenshot.
+function resetZoomOnSelection() {
+    if (previewZoom.level > 1) {
+        resetPreviewZoom();
+    } else {
+        previewZoom.x = 0;
+        previewZoom.y = 0;
+        applyPreviewZoom();
+    }
+}
+
+function setupCanvasToolbar() {
+    document.getElementById('zoom-out')?.addEventListener('click', () => setPreviewZoom(previewZoom.level / 1.25));
+    document.getElementById('zoom-in')?.addEventListener('click', () => setPreviewZoom(previewZoom.level * 1.25));
+    document.getElementById('zoom-reset')?.addEventListener('click', resetPreviewZoom);
+    document.getElementById('zoom-slider')?.addEventListener('input', (e) => {
+        setPreviewZoom(parseInt(e.target.value, 10) / 100);
+    });
+    document.getElementById('delete-current')?.addEventListener('click', () => {
+        deleteScreenshot(state.selectedIndex);
+    });
+
+    const canvasArea = document.querySelector('.canvas-area');
+    canvasArea?.addEventListener('wheel', (e) => {
+        if (e.target.closest('.canvas-toolbar')) return;
+        // Leave horizontal trackpad swipes to the carousel navigation handler
+        if (Math.abs(e.deltaX) > Math.abs(e.deltaY)) return;
+        e.preventDefault();
+        setPreviewZoom(previewZoom.level * (e.deltaY < 0 ? 1.12 : 1 / 1.12), e.clientX, e.clientY);
+    }, { passive: false });
+
+    document.getElementById('preview-canvas')?.addEventListener('dblclick', () => {
+        if (previewZoom.level !== 1) resetPreviewZoom();
+    });
+}
 
 // Preload laurel SVG images for element frames
 const laurelImages = {};
@@ -590,12 +707,14 @@ function setCurrentScreenshotAsDefault() {
 
 // Language flags mapping
 const languageFlags = {
-    'en': '🇺🇸', 'en-gb': '🇬🇧', 'de': '🇩🇪', 'fr': '🇫🇷', 'es': '🇪🇸',
-    'it': '🇮🇹', 'pt': '🇵🇹', 'pt-br': '🇧🇷', 'nl': '🇳🇱', 'ru': '🇷🇺',
-    'ja': '🇯🇵', 'ko': '🇰🇷', 'zh': '🇨🇳', 'zh-tw': '🇹🇼', 'ar': '🇸🇦',
-    'hi': '🇮🇳', 'tr': '🇹🇷', 'pl': '🇵🇱', 'sv': '🇸🇪', 'da': '🇩🇰',
-    'no': '🇳🇴', 'fi': '🇫🇮', 'th': '🇹🇭', 'vi': '🇻🇳', 'id': '🇮🇩',
-    'uk': '🇺🇦'
+    'pl': '🇵🇱', 'en': '🇺🇸', 'de': '🇩🇪', 'fr': '🇫🇷', 'es': '🇪🇸',
+    'it': '🇮🇹', 'nl': '🇳🇱', 'ro': '🇷🇴', 'cs': '🇨🇿', 'sv': '🇸🇪',
+    'pt': '🇵🇹', 'el': '🇬🇷', 'no': '🇳🇴', 'uk': '🇺🇦', 'hr': '🇭🇷',
+    'sl': '🇸🇮', 'et': '🇪🇪', 'lt': '🇱🇹', 'lv': '🇱🇻', 'sk': '🇸🇰',
+    'bg': '🇧🇬', 'fi': '🇫🇮', 'da': '🇩🇰', 'en-gb': '🇬🇧', 'pt-br': '🇧🇷',
+    'ru': '🇷🇺', 'ja': '🇯🇵', 'ko': '🇰🇷', 'zh': '🇨🇳', 'zh-tw': '🇹🇼',
+    'ar': '🇸🇦', 'hi': '🇮🇳', 'tr': '🇹🇷', 'th': '🇹🇭', 'vi': '🇻🇳',
+    'id': '🇮🇩'
 };
 
 // Google Fonts configuration
@@ -1252,6 +1371,18 @@ const deviceDimensions = {
     'web-feature': { width: 1024, height: 500 }
 };
 
+// Display labels matching the device-option names in index.html
+const deviceLabels = {
+    'iphone-6.9': 'iPhone 6.9"', 'iphone-6.7': 'iPhone 6.7"',
+    'iphone-6.5': 'iPhone 6.5"', 'iphone-5.5': 'iPhone 5.5"',
+    'ipad-12.9': 'iPad 12.9"', 'ipad-11': 'iPad 11"',
+    'android-phone': 'Android Phone', 'android-phone-hd': 'Android Phone HD',
+    'android-tablet-7': 'Android Tablet 7"', 'android-tablet-10': 'Android Tablet 10"',
+    'web-og': 'Open Graph', 'web-twitter': 'Twitter/X Card',
+    'web-hero': 'Website Hero', 'web-feature': 'Feature Graphic',
+    'custom': 'Custom'
+};
+
 // DOM elements
 const canvas = document.getElementById('preview-canvas');
 const ctx = canvas.getContext('2d');
@@ -1509,6 +1640,7 @@ function saveState() {
             src: s.image?.src || '', // Legacy compatibility
             name: s.name,
             deviceType: s.deviceType,
+            outputDevice: s.outputDevice,
             localizedImages: localizedImages,
             background: s.background,
             screenshot: s.screenshot,
@@ -1662,6 +1794,7 @@ function loadState() {
                                     image: null,
                                     name: s.name || 'Blank Screen',
                                     deviceType: s.deviceType,
+                                    outputDevice: s.outputDevice,
                                     localizedImages: {},
                                     background: s.background || JSON.parse(JSON.stringify(migratedBackground)),
                                     screenshot: screenshotSettings,
@@ -1701,6 +1834,7 @@ function loadState() {
                                                     image: localizedImages[firstLang]?.image, // Legacy compat
                                                     name: s.name,
                                                     deviceType: s.deviceType,
+                                                    outputDevice: s.outputDevice,
                                                     localizedImages: localizedImages,
                                                     background: s.background || JSON.parse(JSON.stringify(migratedBackground)),
                                                     screenshot: screenshotSettings,
@@ -1746,6 +1880,7 @@ function loadState() {
                                         image: img,
                                         name: s.name,
                                         deviceType: s.deviceType,
+                                        outputDevice: s.outputDevice,
                                         localizedImages: localizedImages,
                                         background: s.background || JSON.parse(JSON.stringify(migratedBackground)),
                                         screenshot: screenshotSettings,
@@ -1788,7 +1923,7 @@ function loadState() {
 
                     // Load global language settings
                     state.currentLanguage = parsed.currentLanguage || 'en';
-                    state.projectLanguages = parsed.projectLanguages || ['en'];
+                    state.projectLanguages = parsed.projectLanguages || [...LEARNME_LANGUAGES];
 
                     // Load defaults (new format) or use migrated settings
                     if (parsed.defaults) {
@@ -1847,8 +1982,8 @@ function resetStateToDefaults() {
     state.outputDevice = 'iphone-6.9';
     state.customWidth = 1320;
     state.customHeight = 2868;
-    state.currentLanguage = 'en';
-    state.projectLanguages = ['en'];
+    state.currentLanguage = 'pl';
+    state.projectLanguages = [...LEARNME_LANGUAGES];
     state.defaults = {
         background: {
             type: 'gradient',
@@ -1890,45 +2025,7 @@ function resetStateToDefaults() {
                 opacity: 100
             }
         },
-        text: {
-            headlineEnabled: true,
-            headlines: { en: '' },
-            headlineLanguages: ['en'],
-            currentHeadlineLang: 'en',
-            headlineFont: "-apple-system, BlinkMacSystemFont, 'SF Pro Display'",
-            headlineSize: 100,
-            headlineWeight: '600',
-            headlineItalic: false,
-            headlineUnderline: false,
-            headlineStrikethrough: false,
-            headlineColor: '#ffffff',
-            perLanguageLayout: false,
-            languageSettings: {
-                en: {
-                    headlineSize: 100,
-                    subheadlineSize: 50,
-                    position: 'top',
-                    offsetY: 12,
-                    lineHeight: 110
-                }
-            },
-            currentLayoutLang: 'en',
-            position: 'top',
-            offsetY: 12,
-            lineHeight: 110,
-            subheadlineEnabled: false,
-            subheadlines: { en: '' },
-            subheadlineLanguages: ['en'],
-            currentSubheadlineLang: 'en',
-            subheadlineFont: "-apple-system, BlinkMacSystemFont, 'SF Pro Display'",
-            subheadlineSize: 50,
-            subheadlineWeight: '400',
-            subheadlineItalic: false,
-            subheadlineUnderline: false,
-            subheadlineStrikethrough: false,
-            subheadlineColor: '#ffffff',
-            subheadlineOpacity: 70
-        }
+        text: JSON.parse(JSON.stringify(baseTextDefaults))
     };
 }
 
@@ -2042,6 +2139,7 @@ function duplicateScreenshot(index) {
     const clone = JSON.parse(JSON.stringify({
         name: original.name,
         deviceType: original.deviceType,
+        outputDevice: original.outputDevice,
         background: original.background,
         screenshot: original.screenshot,
         text: original.text,
@@ -2081,6 +2179,43 @@ function duplicateScreenshot(index) {
     state.screenshots.splice(index + 1, 0, clone);
     state.selectedIndex = index + 1;
 
+    updateScreenshotList();
+    syncUIWithState();
+    updateGradientStopsUI();
+    updateCanvas();
+}
+
+async function renameScreenshot(index) {
+    const screenshot = state.screenshots[index];
+    if (!screenshot) return;
+
+    const current = (screenshot.name || '').replace(/\.[^.]+$/, '');
+    const name = await showAppPrompt('Screenshot name (used as export filename):', current);
+    if (name === null) return;
+
+    const trimmed = name.trim();
+    if (!trimmed || trimmed === current) return;
+
+    screenshot.name = trimmed;
+    updateScreenshotList();
+    saveState();
+}
+
+async function deleteScreenshot(index) {
+    const screenshot = state.screenshots[index];
+    if (!screenshot) return;
+
+    const confirmed = await showAppConfirm(
+        `Delete "${getExportBasename(screenshot, index)}"?`,
+        'Delete',
+        'Cancel'
+    );
+    if (!confirmed) return;
+
+    state.screenshots.splice(index, 1);
+    if (state.selectedIndex >= state.screenshots.length) {
+        state.selectedIndex = Math.max(0, state.screenshots.length - 1);
+    }
     updateScreenshotList();
     syncUIWithState();
     updateGradientStopsUI();
@@ -2130,16 +2265,17 @@ function syncUIWithState() {
     // Update language button
     updateLanguageButton();
 
-    // Device selector dropdown
+    // Device selector dropdown — reflects the current screenshot's format
+    const activeDevice = getScreenshotOutputDevice(getCurrentScreenshot());
     document.querySelectorAll('.output-size-menu .device-option').forEach(opt => {
-        opt.classList.toggle('selected', opt.dataset.device === state.outputDevice);
+        opt.classList.toggle('selected', opt.dataset.device === activeDevice);
     });
 
     // Update dropdown trigger text
-    const selectedOption = document.querySelector(`.output-size-menu .device-option[data-device="${state.outputDevice}"]`);
+    const selectedOption = document.querySelector(`.output-size-menu .device-option[data-device="${activeDevice}"]`);
     if (selectedOption) {
         document.getElementById('output-size-name').textContent = selectedOption.querySelector('.device-option-name').textContent;
-        if (state.outputDevice === 'custom') {
+        if (activeDevice === 'custom') {
             document.getElementById('output-size-dims').textContent = `${state.customWidth} × ${state.customHeight}`;
         } else {
             document.getElementById('output-size-dims').textContent = selectedOption.querySelector('.device-option-size').textContent;
@@ -2148,7 +2284,7 @@ function syncUIWithState() {
 
     // Show/hide custom inputs
     const customInputs = document.getElementById('custom-size-inputs');
-    customInputs.classList.toggle('visible', state.outputDevice === 'custom');
+    customInputs.classList.toggle('visible', activeDevice === 'custom');
     document.getElementById('custom-width').value = state.customWidth;
     document.getElementById('custom-height').value = state.customHeight;
 
@@ -2736,6 +2872,9 @@ function setupElementEventListeners() {
 
     // Canvas drag interaction for elements
     setupElementCanvasDrag();
+
+    // Canvas toolbar (zoom controls, delete)
+    setupCanvasToolbar();
 }
 
 function setupElementCanvasDrag() {
@@ -2875,6 +3014,29 @@ function setupElementCanvasDrag() {
     }
 
     function clearDrag() {
+        if (stripDrag) {
+            const { deltaX, moved } = stripDrag;
+            stripDrag = null;
+            previewStrip.classList.remove('dragging');
+            const threshold = 60;
+            if (moved) justStripDragged = true;
+            if (moved && Math.abs(deltaX) > threshold) {
+                const target = deltaX < 0 ? state.selectedIndex + 1 : state.selectedIndex - 1;
+                if (target >= 0 && target < state.screenshots.length) {
+                    // Leave the drag transform in place — slideToScreenshot
+                    // animates from it to the target position
+                    slideToScreenshot(target, deltaX < 0 ? 'right' : 'left');
+                    return;
+                }
+            }
+            // Below threshold or at an edge — transition snaps the strip back
+            previewStrip.style.transform = '';
+        }
+        if (panDrag) {
+            panDrag = null;
+            canvasWrapper.classList.remove('panning');
+            previewCanvas.classList.remove('panning');
+        }
         if (draggingElement) {
             draggingElement = null;
             activeSnapGuides = { x: null, y: null };
@@ -2942,10 +3104,48 @@ function setupElementCanvasDrag() {
             if (elementsTab && !elementsTab.classList.contains('active')) {
                 elementsTab.click();
             }
+            return;
+        }
+
+        // No element hit — zoomed: drag pans; at 100%: horizontal drag navigates
+        if (previewZoom.level !== 1) {
+            e.preventDefault();
+            panDrag = {
+                startX: e.clientX,
+                startY: e.clientY,
+                origX: previewZoom.x,
+                origY: previewZoom.y
+            };
+            canvasWrapper.classList.add('panning');
+            previewCanvas.classList.add('panning');
+        } else if (state.screenshots.length > 1 && !isSliding) {
+            e.preventDefault();
+            stripDrag = { startX: e.clientX, deltaX: 0, moved: false };
+            previewStrip.classList.add('dragging');
         }
     });
 
     window.addEventListener('mousemove', (e) => {
+        if (stripDrag) {
+            stripDrag.deltaX = e.clientX - stripDrag.startX;
+            if (Math.abs(stripDrag.deltaX) > 4) stripDrag.moved = true;
+            // Rubber-band at the edges
+            let d = stripDrag.deltaX;
+            const atFirst = state.selectedIndex === 0;
+            const atLast = state.selectedIndex === state.screenshots.length - 1;
+            if ((atFirst && d > 0) || (atLast && d < 0)) d *= 0.3;
+            previewStrip.style.transform = `translateX(${d}px)`;
+            e.preventDefault();
+            return;
+        }
+        if (panDrag) {
+            e.preventDefault();
+            previewZoom.x = panDrag.origX + (e.clientX - panDrag.startX);
+            previewZoom.y = panDrag.origY + (e.clientY - panDrag.startY);
+            clampPreviewPan();
+            applyPreviewZoom();
+            return;
+        }
         if (!draggingElement) {
             // Hover detection
             const coords = getCanvasCoords(e);
@@ -3010,6 +3210,46 @@ function setupElementCanvasDrag() {
     }, { passive: false });
 
     previewCanvas.addEventListener('touchend', () => clearDrag());
+
+    // Drag gestures starting on the background around the tiles
+    // (canvas itself is handled above — element hits first, then pan/navigate)
+    const canvasArea = document.querySelector('.canvas-area');
+    if (canvasArea) {
+        canvasArea.addEventListener('mousedown', (e) => {
+            if (e.button !== 0) return;
+            if (e.target === previewCanvas) return;
+            if (e.target.closest('.canvas-toolbar')) return;
+            if (e.target.closest('.canvas-delete-btn')) return;
+            if (e.target.closest('#threejs-container')) return;
+            if (panDrag || stripDrag || draggingElement || isSliding) return;
+
+            if (previewZoom.level !== 1) {
+                e.preventDefault();
+                panDrag = {
+                    startX: e.clientX,
+                    startY: e.clientY,
+                    origX: previewZoom.x,
+                    origY: previewZoom.y
+                };
+                canvasWrapper.classList.add('panning');
+                previewCanvas.classList.add('panning');
+            } else if (state.screenshots.length > 1) {
+                e.preventDefault();
+                stripDrag = { startX: e.clientX, deltaX: 0, moved: false };
+                previewStrip.classList.add('dragging');
+            }
+        });
+    }
+
+    // Swallow the click that follows a real drag so side previews
+    // don't also fire their select handler
+    previewStrip.addEventListener('click', (e) => {
+        if (justStripDragged) {
+            justStripDragged = false;
+            e.preventDefault();
+            e.stopPropagation();
+        }
+    }, true);
 }
 
 // Draw snap guide lines over the canvas when dragging near center/middle
@@ -4086,6 +4326,13 @@ function setupEventListeners() {
             opt.classList.add('selected');
             state.outputDevice = opt.dataset.device;
 
+            // Assign format to the current screenshot (global stays as default for new ones)
+            const currentScreenshot = getCurrentScreenshot();
+            if (currentScreenshot) {
+                currentScreenshot.outputDevice = opt.dataset.device;
+            }
+            resetPreviewZoom();
+
             // Update trigger text
             document.getElementById('output-size-name').textContent = opt.querySelector('.device-option-name').textContent;
             document.getElementById('output-size-dims').textContent = opt.querySelector('.device-option-size').textContent;
@@ -4998,13 +5245,16 @@ function updateSubheadlineLanguageUI() {
 let currentTranslateTarget = null;
 
 const languageNames = {
-    'en': 'English (US)', 'en-gb': 'English (UK)', 'de': 'German', 'fr': 'French',
-    'es': 'Spanish', 'it': 'Italian', 'pt': 'Portuguese', 'pt-br': 'Portuguese (BR)',
-    'nl': 'Dutch', 'ru': 'Russian', 'ja': 'Japanese', 'ko': 'Korean',
+    'pl': 'Polish', 'en': 'English (US)', 'de': 'German', 'fr': 'French',
+    'es': 'Spanish', 'it': 'Italian', 'nl': 'Dutch', 'ro': 'Romanian',
+    'cs': 'Czech', 'sv': 'Swedish', 'pt': 'Portuguese', 'el': 'Greek',
+    'no': 'Norwegian', 'uk': 'Ukrainian', 'hr': 'Croatian', 'sl': 'Slovenian',
+    'et': 'Estonian', 'lt': 'Lithuanian', 'lv': 'Latvian', 'sk': 'Slovak',
+    'bg': 'Bulgarian', 'fi': 'Finnish', 'da': 'Danish', 'en-gb': 'English (UK)',
+    'pt-br': 'Portuguese (BR)', 'ru': 'Russian', 'ja': 'Japanese', 'ko': 'Korean',
     'zh': 'Chinese (Simplified)', 'zh-tw': 'Chinese (Traditional)', 'ar': 'Arabic',
-    'hi': 'Hindi', 'tr': 'Turkish', 'pl': 'Polish', 'sv': 'Swedish',
-    'da': 'Danish', 'no': 'Norwegian', 'fi': 'Finnish', 'th': 'Thai',
-    'vi': 'Vietnamese', 'id': 'Indonesian', 'uk': 'Ukrainian'
+    'hi': 'Hindi', 'tr': 'Turkish', 'th': 'Thai', 'vi': 'Vietnamese',
+    'id': 'Indonesian'
 };
 
 function openTranslateModal(target) {
@@ -5337,6 +5587,47 @@ function showAppConfirm(message, confirmText = 'Confirm', cancelText = 'Cancel')
                 overlay.remove();
                 resolve(false);
             }
+        });
+    });
+}
+
+// Helper function to show styled prompt modal with a text input
+function showAppPrompt(message, defaultValue = '') {
+    return new Promise((resolve) => {
+        const overlay = document.createElement('div');
+        overlay.className = 'modal-overlay visible';
+        const safeValue = defaultValue.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+        overlay.innerHTML = `
+            <div class="modal">
+                <p class="modal-message" style="margin: 16px 0;">${message}</p>
+                <input class="app-prompt-input" type="text" value="${safeValue}" style="width: 100%; padding: 10px 12px; background: var(--bg-tertiary); border: 1px solid var(--border); border-radius: 8px; color: var(--text-primary); font-size: 14px; margin-bottom: 16px;">
+                <div class="modal-buttons">
+                    <button class="modal-btn modal-btn-cancel">Cancel</button>
+                    <button class="modal-btn modal-btn-confirm" style="background: var(--accent);">OK</button>
+                </div>
+            </div>
+        `;
+        document.body.appendChild(overlay);
+
+        const input = overlay.querySelector('.app-prompt-input');
+        const confirmBtn = overlay.querySelector('.modal-btn-confirm');
+        const cancelBtn = overlay.querySelector('.modal-btn-cancel');
+
+        input.focus();
+        input.select();
+
+        const close = (value) => {
+            overlay.remove();
+            resolve(value);
+        };
+        confirmBtn.addEventListener('click', () => close(input.value));
+        cancelBtn.addEventListener('click', () => close(null));
+        input.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') close(input.value);
+            if (e.key === 'Escape') close(null);
+        });
+        overlay.addEventListener('click', (e) => {
+            if (e.target === overlay) close(null);
         });
     });
 }
@@ -6196,6 +6487,7 @@ function createNewScreenshot(img, src, name, lang, deviceType) {
         image: img || null, // Keep for legacy compatibility
         name: name || 'Blank Screen',
         deviceType: deviceType,
+        outputDevice: state.outputDevice,
         localizedImages: localizedImages,
         background: JSON.parse(JSON.stringify(state.defaults.background)),
         screenshot: JSON.parse(JSON.stringify(state.defaults.screenshot)),
@@ -6226,8 +6518,10 @@ function updateScreenshotList() {
     if (rightSidebar) rightSidebar.classList.toggle('disabled', isEmpty);
     const exportCurrent = document.getElementById('export-current');
     const exportAll = document.getElementById('export-all');
+    const deleteCurrent = document.getElementById('delete-current');
     if (exportCurrent) { exportCurrent.disabled = isEmpty; exportCurrent.style.opacity = isEmpty ? '0.4' : ''; exportCurrent.style.pointerEvents = isEmpty ? 'none' : ''; }
     if (exportAll) { exportAll.disabled = isEmpty; exportAll.style.opacity = isEmpty ? '0.4' : ''; exportAll.style.pointerEvents = isEmpty ? 'none' : ''; }
+    if (deleteCurrent) { deleteCurrent.disabled = isEmpty; }
 
     // Show transfer mode hint if active
     if (state.transferTarget !== null && state.screenshots.length > 1) {
@@ -6258,6 +6552,11 @@ function updateScreenshotList() {
         // Show different UI in transfer mode
         const buttonsHtml = isTransferMode ? '' : `
             <div class="screenshot-menu-wrapper">
+                <button class="screenshot-quick-delete" data-index="${index}" title="Delete screenshot">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M3 6h18M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2m3 0v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6h14zM10 11v6M14 11v6"/>
+                    </svg>
+                </button>
                 <button class="screenshot-menu-btn" data-index="${index}" title="More options">
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
                         <circle cx="12" cy="5" r="2"/>
@@ -6301,6 +6600,12 @@ function updateScreenshotList() {
                             <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
                         </svg>
                         Duplicate
+                    </button>
+                    <button class="screenshot-menu-item screenshot-rename" data-index="${index}">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"/>
+                        </svg>
+                        Rename...
                     </button>
                     <button class="screenshot-menu-item screenshot-delete danger" data-index="${index}">
                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -6346,7 +6651,7 @@ function updateScreenshotList() {
             ${thumbHtml}
             <div class="screenshot-info">
                 <div class="screenshot-name">${screenshot.name}</div>
-                <div class="screenshot-device">${isTransferTarget ? 'Click source to copy style' : screenshot.deviceType}${langFlagsHtml}</div>
+                <div class="screenshot-device">${isTransferTarget ? 'Click source to copy style' : `${screenshot.deviceType} · ${deviceLabels[getScreenshotOutputDevice(screenshot)] || getScreenshotOutputDevice(screenshot)}`}${langFlagsHtml}</div>
             </div>
             ${buttonsHtml}
         `;
@@ -6459,6 +6764,7 @@ function updateScreenshotList() {
 
             // Normal selection
             state.selectedIndex = index;
+            resetZoomOnSelection();
             updateScreenshotList();
             // Sync all UI with current screenshot's settings
             syncUIWithState();
@@ -6535,20 +6841,31 @@ function updateScreenshotList() {
             });
         }
 
+        const renameBtn = item.querySelector('.screenshot-rename');
+        if (renameBtn) {
+            renameBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                menu?.classList.remove('open');
+                renameScreenshot(index);
+            });
+        }
+
         // Delete button handler
         const deleteBtn = item.querySelector('.screenshot-delete');
         if (deleteBtn) {
             deleteBtn.addEventListener('click', (e) => {
                 e.stopPropagation();
                 menu?.classList.remove('open');
-                state.screenshots.splice(index, 1);
-                if (state.selectedIndex >= state.screenshots.length) {
-                    state.selectedIndex = Math.max(0, state.screenshots.length - 1);
-                }
-                updateScreenshotList();
-                syncUIWithState();
-                updateGradientStopsUI();
-                updateCanvas();
+                deleteScreenshot(index);
+            });
+        }
+
+        // Quick delete (hover trash icon)
+        const quickDeleteBtn = item.querySelector('.screenshot-quick-delete');
+        if (quickDeleteBtn) {
+            quickDeleteBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                deleteScreenshot(index);
             });
         }
 
@@ -6790,11 +7107,17 @@ function updateGradientStopsUI() {
     });
 }
 
-function getCanvasDimensions() {
-    if (state.outputDevice === 'custom') {
+// Output format is per-screenshot; state.outputDevice is the default for new ones
+function getScreenshotOutputDevice(screenshot) {
+    return screenshot?.outputDevice || state.outputDevice;
+}
+
+function getCanvasDimensions(screenshot) {
+    const device = getScreenshotOutputDevice(screenshot || getCurrentScreenshot());
+    if (device === 'custom') {
         return { width: state.customWidth, height: state.customHeight };
     }
-    return deviceDimensions[state.outputDevice];
+    return deviceDimensions[device] || deviceDimensions['iphone-6.9'];
 }
 
 function updateCanvas() {
@@ -6880,11 +7203,11 @@ function updateSidePreviews() {
         }
     }
 
-    // Calculate main canvas display width and position side previews with 10px gap
+    // Calculate main canvas display width and position side previews with 10px gap.
+    // Each side preview uses its own display size (formats may differ per screenshot).
     const mainCanvasWidth = dims.width * previewScale;
     const gap = 10;
     const sideOffset = mainCanvasWidth / 2 + gap;
-    const farSideOffset = sideOffset + mainCanvasWidth + gap;
 
     // Previous screenshot (left, index - 1)
     const prevIndex = state.selectedIndex - 1;
@@ -6893,7 +7216,7 @@ function updateSidePreviews() {
         sidePreviewLeft.style.right = `calc(50% + ${sideOffset}px)`;
         // Skip render if already pre-rendered during slide transition
         if (!skipSidePreviewRender) {
-            renderScreenshotToCanvas(prevIndex, canvasLeft, ctxLeft, dims, previewScale);
+            renderScreenshotToCanvas(prevIndex, canvasLeft, ctxLeft);
         }
         // Click to select previous with animation
         sidePreviewLeft.onclick = () => {
@@ -6906,10 +7229,12 @@ function updateSidePreviews() {
 
     // Far previous screenshot (far left, index - 2)
     const farPrevIndex = state.selectedIndex - 2;
+    const leftDisplayW = parseFloat(canvasLeft.style.width) || mainCanvasWidth;
+    const farSideOffsetLeft = sideOffset + leftDisplayW + gap;
     if (farPrevIndex >= 0 && state.screenshots.length > 2) {
         sidePreviewFarLeft.classList.remove('hidden');
-        sidePreviewFarLeft.style.right = `calc(50% + ${farSideOffset}px)`;
-        renderScreenshotToCanvas(farPrevIndex, canvasFarLeft, ctxFarLeft, dims, previewScale);
+        sidePreviewFarLeft.style.right = `calc(50% + ${farSideOffsetLeft}px)`;
+        renderScreenshotToCanvas(farPrevIndex, canvasFarLeft, ctxFarLeft);
     } else {
         sidePreviewFarLeft.classList.add('hidden');
     }
@@ -6921,7 +7246,7 @@ function updateSidePreviews() {
         sidePreviewRight.style.left = `calc(50% + ${sideOffset}px)`;
         // Skip render if already pre-rendered during slide transition
         if (!skipSidePreviewRender) {
-            renderScreenshotToCanvas(nextIndex, canvasRight, ctxRight, dims, previewScale);
+            renderScreenshotToCanvas(nextIndex, canvasRight, ctxRight);
         }
         // Click to select next with animation
         sidePreviewRight.onclick = () => {
@@ -6934,10 +7259,12 @@ function updateSidePreviews() {
 
     // Far next screenshot (far right, index + 2)
     const farNextIndex = state.selectedIndex + 2;
+    const rightDisplayW = parseFloat(canvasRight.style.width) || mainCanvasWidth;
+    const farSideOffsetRight = sideOffset + rightDisplayW + gap;
     if (farNextIndex < state.screenshots.length && state.screenshots.length > 2) {
         sidePreviewFarRight.classList.remove('hidden');
-        sidePreviewFarRight.style.left = `calc(50% + ${farSideOffset}px)`;
-        renderScreenshotToCanvas(farNextIndex, canvasFarRight, ctxFarRight, dims, previewScale);
+        sidePreviewFarRight.style.left = `calc(50% + ${farSideOffsetRight}px)`;
+        renderScreenshotToCanvas(farNextIndex, canvasFarRight, ctxFarRight);
     } else {
         sidePreviewFarRight.classList.add('hidden');
     }
@@ -6947,11 +7274,10 @@ function slideToScreenshot(newIndex, direction) {
     isSliding = true;
     previewStrip.classList.add('sliding');
 
-    const dims = getCanvasDimensions();
-    const maxPreviewWidth = 400;
-    const maxPreviewHeight = 700;
-    const previewScale = Math.min(maxPreviewWidth / dims.width, maxPreviewHeight / dims.height);
-    const slideDistance = dims.width * previewScale + 10; // canvas width + gap
+    // Slide distance is based on the incoming screenshot's own format
+    const targetDims = getCanvasDimensions(state.screenshots[newIndex]);
+    const previewScale = Math.min(400 / targetDims.width, 700 / targetDims.height);
+    const slideDistance = targetDims.width * previewScale + 10; // canvas width + gap
 
     const newPrevIndex = newIndex - 1;
     const newNextIndex = newIndex + 1;
@@ -6971,10 +7297,13 @@ function slideToScreenshot(newIndex, direction) {
     const modelsReady = modelPromises.length > 0 ? Promise.all(modelPromises) : Promise.resolve();
 
     // Slide the strip in the opposite direction of the click
-    if (direction === 'right') {
-        previewStrip.style.transform = `translateX(-${slideDistance}px)`;
-    } else {
-        previewStrip.style.transform = `translateX(${slideDistance}px)`;
+    // (skip when zoomed — the strip transform already carries the zoom scale)
+    if (previewZoom.level === 1) {
+        if (direction === 'right') {
+            previewStrip.style.transform = `translateX(-${slideDistance}px)`;
+        } else {
+            previewStrip.style.transform = `translateX(${slideDistance}px)`;
+        }
     }
 
     // Wait for BOTH animation AND models to be ready
@@ -6987,7 +7316,7 @@ function slideToScreenshot(newIndex, direction) {
             if (index < 0 || index >= state.screenshots.length) return null;
             const tempCanvas = document.createElement('canvas');
             const tempCtx = tempCanvas.getContext('2d');
-            renderScreenshotToCanvas(index, tempCanvas, tempCtx, dims, previewScale);
+            renderScreenshotToCanvas(index, tempCanvas, tempCtx);
             return { tempCanvas, targetCanvas };
         };
 
@@ -6998,13 +7327,16 @@ function slideToScreenshot(newIndex, direction) {
 
         // Disable transition temporarily for instant reset
         previewStrip.style.transition = 'none';
-        previewStrip.style.transform = 'translateX(0)';
+        if (previewZoom.level === 1) {
+            previewStrip.style.transform = 'translateX(0)';
+        }
 
         // Suppress updateCanvas calls from switchPhoneModel during sync
         window.suppressSwitchModelUpdate = true;
 
         // Update state
         state.selectedIndex = newIndex;
+        resetZoomOnSelection();
         updateScreenshotList();
         syncUIWithState();
         updateGradientStopsUI();
@@ -7042,9 +7374,14 @@ function slideToScreenshot(newIndex, direction) {
     });
 }
 
-function renderScreenshotToCanvas(index, targetCanvas, targetCtx, dims, previewScale) {
+// Renders a screenshot into a target canvas at ITS OWN output format.
+// Returns the display size {displayWidth, displayHeight} for positioning.
+function renderScreenshotToCanvas(index, targetCanvas, targetCtx) {
     const screenshot = state.screenshots[index];
-    if (!screenshot) return;
+    if (!screenshot) return null;
+
+    const dims = getCanvasDimensions(screenshot);
+    const previewScale = Math.min(400 / dims.width, 700 / dims.height);
 
     // Get localized image for current language
     const img = getScreenshotImage(screenshot);
@@ -7099,6 +7436,8 @@ function renderScreenshotToCanvas(index, targetCanvas, targetCtx, dims, previewS
 
     // Elements above text
     drawElementsToContext(targetCtx, dims, elements, 'above-text');
+
+    return { displayWidth: dims.width * previewScale, displayHeight: dims.height * previewScale };
 }
 
 function drawBackgroundToContext(context, dims, bg) {
@@ -8078,6 +8417,32 @@ function hexToRgba(hex, alpha) {
     return `rgba(${r}, ${g}, ${b}, ${alpha})`;
 }
 
+// Build a filesystem-safe export base name from a screenshot's display name.
+// Falls back to screenshot-N when unnamed; usedNames (Set) dedupes within one export.
+function getExportBasename(screenshot, index, usedNames) {
+    const rawName = (screenshot?.name || '').replace(/\.[^.]+$/, '').trim();
+    let base = rawName
+        .replace(/\s+/g, '-')
+        .replace(/[<>:"/\\|?*\x00-\x1f]/g, '')
+        .replace(/\.+$/, '');
+
+    if (!base || rawName === 'Blank Screen') {
+        base = `screenshot-${index + 1}`;
+    }
+
+    if (usedNames) {
+        let candidate = base;
+        let n = 2;
+        while (usedNames.has(candidate.toLowerCase())) {
+            candidate = `${base}-${n++}`;
+        }
+        usedNames.add(candidate.toLowerCase());
+        base = candidate;
+    }
+
+    return base;
+}
+
 async function exportCurrent() {
     if (state.screenshots.length === 0) {
         await showAppAlert('Please upload a screenshot first', 'info');
@@ -8087,8 +8452,9 @@ async function exportCurrent() {
     // Ensure canvas is up-to-date (especially important for 3D mode)
     updateCanvas();
 
+    const screenshot = state.screenshots[state.selectedIndex];
     const link = document.createElement('a');
-    link.download = `screenshot-${state.selectedIndex + 1}.png`;
+    link.download = `${getExportBasename(screenshot, state.selectedIndex)}.png`;
     link.href = canvas.toDataURL('image/png');
     link.click();
 }
@@ -8160,13 +8526,29 @@ async function exportAllForLanguage(lang) {
         s.text.currentSubheadlineLang = lang;
     });
 
+    // Group files into per-format folders when screenshots use different output devices
+    const devicesUsed = new Set(state.screenshots.map(s => getScreenshotOutputDevice(s)));
+    const groupByDevice = devicesUsed.size > 1;
+
+    const namesByDevice = new Map();
+    const fileNames = state.screenshots.map((s, i) => {
+        const device = getScreenshotOutputDevice(s);
+        if (!namesByDevice.has(device)) namesByDevice.set(device, new Set());
+        return `${getExportBasename(s, i, namesByDevice.get(device))}.png`;
+    });
+    const filePath = (i) => {
+        const device = getScreenshotOutputDevice(state.screenshots[i]);
+        return groupByDevice ? `${device}/${fileNames[i]}` : fileNames[i];
+    };
+
     for (let i = 0; i < state.screenshots.length; i++) {
         state.selectedIndex = i;
         updateCanvas();
 
         // Update progress
         const percent = Math.round(((i + 1) / total) * 90); // Reserve 10% for ZIP generation
-        showExportProgress('Exporting...', `Screenshot ${i + 1} of ${total}`, percent);
+        const deviceLabel = deviceLabels[getScreenshotOutputDevice(state.screenshots[i])] || '';
+        showExportProgress('Exporting...', `Screenshot ${i + 1} of ${total}${deviceLabel ? ` (${deviceLabel})` : ''}`, percent);
 
         await new Promise(resolve => setTimeout(resolve, 100));
 
@@ -8174,7 +8556,7 @@ async function exportAllForLanguage(lang) {
         const dataUrl = canvas.toDataURL('image/png');
         const base64Data = dataUrl.replace(/^data:image\/png;base64,/, '');
 
-        zip.file(`screenshot-${i + 1}.png`, base64Data, { base64: true });
+        zip.file(filePath(i), base64Data, { base64: true });
     }
 
     // Restore original settings
@@ -8195,7 +8577,7 @@ async function exportAllForLanguage(lang) {
     hideExportProgress();
 
     const link = document.createElement('a');
-    link.download = `screenshots_${state.outputDevice}_${lang}.zip`;
+    link.download = `screenshots_${groupByDevice ? 'multi-format' : [...devicesUsed][0]}_${lang}.zip`;
     link.href = URL.createObjectURL(content);
     link.click();
     URL.revokeObjectURL(link.href);
@@ -8220,6 +8602,21 @@ async function exportAllLanguages() {
         headline: s.text.currentHeadlineLang,
         subheadline: s.text.currentSubheadlineLang
     }));
+
+    // Group files into per-format folders when screenshots use different output devices
+    const devicesUsed = new Set(state.screenshots.map(s => getScreenshotOutputDevice(s)));
+    const groupByDevice = devicesUsed.size > 1;
+
+    const namesByDevice = new Map();
+    const fileNames = state.screenshots.map((s, i) => {
+        const device = getScreenshotOutputDevice(s);
+        if (!namesByDevice.has(device)) namesByDevice.set(device, new Set());
+        return `${getExportBasename(s, i, namesByDevice.get(device))}.png`;
+    });
+    const filePath = (i) => {
+        const device = getScreenshotOutputDevice(state.screenshots[i]);
+        return groupByDevice ? `${device}/${fileNames[i]}` : fileNames[i];
+    };
 
     for (let langIdx = 0; langIdx < state.projectLanguages.length; langIdx++) {
         const lang = state.projectLanguages[langIdx];
@@ -8246,8 +8643,8 @@ async function exportAllLanguages() {
             const dataUrl = canvas.toDataURL('image/png');
             const base64Data = dataUrl.replace(/^data:image\/png;base64,/, '');
 
-            // Use language code as folder name
-            zip.file(`${lang}/screenshot-${i + 1}.png`, base64Data, { base64: true });
+            // Structure: <lang>/<format>/<name>.png (flat when all screenshots share one format)
+            zip.file(`${lang}/${filePath(i)}`, base64Data, { base64: true });
         }
     }
 
@@ -8269,7 +8666,7 @@ async function exportAllLanguages() {
     hideExportProgress();
 
     const link = document.createElement('a');
-    link.download = `screenshots_${state.outputDevice}_all-languages.zip`;
+    link.download = `screenshots_${groupByDevice ? 'multi-format' : [...devicesUsed][0]}_all-languages.zip`;
     link.href = URL.createObjectURL(content);
     link.click();
     URL.revokeObjectURL(link.href);

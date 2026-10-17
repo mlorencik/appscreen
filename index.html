@@ -197,106 +197,132 @@
             <div class="sidebar-footer">
                 <div class="export-output-section">
                     <div class="export-row">
-                        <div class="output-size-dropdown" id="output-size-dropdown">
-                            <button class="output-size-trigger" id="output-size-trigger">
-                                <div class="output-size-info">
-                                    <span class="output-size-name" id="output-size-name">iPhone 6.9"</span>
-                                    <span class="output-size-dims" id="output-size-dims">1320 × 2868</span>
-                                </div>
-                                <svg class="dropdown-arrow" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                    <polyline points="6 9 12 15 18 9"/>
-                                </svg>
-                            </button>
-                            <div class="output-size-menu" id="output-size-menu">
-                                <div class="device-option selected" data-device="iphone-6.9">
-                                    <span class="device-option-name">iPhone 6.9"</span>
-                                    <span class="device-option-size">1320 × 2868</span>
-                                </div>
-                                <div class="device-option" data-device="iphone-6.7">
-                                    <span class="device-option-name">iPhone 6.7"</span>
-                                    <span class="device-option-size">1290 × 2796</span>
-                                </div>
-                                <div class="device-option" data-device="iphone-6.5">
-                                    <span class="device-option-name">iPhone 6.5"</span>
-                                    <span class="device-option-size">1284 × 2778</span>
-                                </div>
-                                <div class="device-option" data-device="iphone-5.5">
-                                    <span class="device-option-name">iPhone 5.5"</span>
-                                    <span class="device-option-size">1242 × 2208</span>
-                                </div>
-                                <div class="output-size-divider"></div>
-                                <div class="device-option" data-device="ipad-12.9">
-                                    <span class="device-option-name">iPad 12.9"</span>
-                                    <span class="device-option-size">2048 × 2732</span>
-                                </div>
-                                <div class="device-option" data-device="ipad-11">
-                                    <span class="device-option-name">iPad 11"</span>
-                                    <span class="device-option-size">1668 × 2388</span>
-                                </div>
-                                <div class="output-size-divider"></div>
-                                <div class="device-option" data-device="android-phone">
-                                    <span class="device-option-name">Android Phone</span>
-                                    <span class="device-option-size">1080 × 1920</span>
-                                </div>
-                                <div class="device-option" data-device="android-phone-hd">
-                                    <span class="device-option-name">Android Phone HD</span>
-                                    <span class="device-option-size">1440 × 2560</span>
-                                </div>
-                                <div class="device-option" data-device="android-tablet-7">
-                                    <span class="device-option-name">Android Tablet 7"</span>
-                                    <span class="device-option-size">1200 × 1920</span>
-                                </div>
-                                <div class="device-option" data-device="android-tablet-10">
-                                    <span class="device-option-name">Android Tablet 10"</span>
-                                    <span class="device-option-size">1600 × 2560</span>
-                                </div>
-                                <div class="output-size-divider"></div>
-                                <div class="device-option" data-device="web-og">
-                                    <span class="device-option-name">Open Graph</span>
-                                    <span class="device-option-size">1200 × 630</span>
-                                </div>
-                                <div class="device-option" data-device="web-twitter">
-                                    <span class="device-option-name">Twitter/X Card</span>
-                                    <span class="device-option-size">1200 × 675</span>
-                                </div>
-                                <div class="device-option" data-device="web-hero">
-                                    <span class="device-option-name">Website Hero</span>
-                                    <span class="device-option-size">1920 × 1080</span>
-                                </div>
-                                <div class="device-option" data-device="web-feature">
-                                    <span class="device-option-name">Feature Graphic</span>
-                                    <span class="device-option-size">1024 × 500</span>
-                                </div>
-                                <div class="output-size-divider"></div>
-                                <div class="device-option" data-device="custom">
-                                    <span class="device-option-name">Custom Size</span>
-                                    <span class="device-option-size">Set dimensions</span>
-                                </div>
-                                <div id="custom-size-inputs" class="custom-size-inputs">
-                                    <input type="number" id="custom-width" value="1290" min="100" max="4000" placeholder="Width">
-                                    <span class="custom-size-x">×</span>
-                                    <input type="number" id="custom-height" value="2796" min="100" max="4000" placeholder="Height">
-                                </div>
-                            </div>
-                        </div>
                         <button class="export-btn secondary" id="export-current" title="Export current screenshot">
                             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                                 <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3"/>
                             </svg>
                         </button>
+                        <button class="export-btn export-all-btn" id="export-all" title="Export all screenshots as ZIP">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3"/>
+                            </svg>
+                            Export All
+                        </button>
                     </div>
-                    <button class="export-btn export-all-btn" id="export-all" title="Export all screenshots as ZIP">
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3"/>
-                        </svg>
-                        Export All
-                    </button>
                 </div>
             </div>
         </div>
 
         <!-- Main Canvas Area -->
         <div class="canvas-area">
+            <div class="canvas-toolbar">
+                <div class="canvas-toolbar-group">
+                    <div class="output-size-dropdown" id="output-size-dropdown">
+                        <button class="output-size-trigger" id="output-size-trigger">
+                            <div class="output-size-info">
+                                <span class="output-size-name" id="output-size-name">iPhone 6.9"</span>
+                                <span class="output-size-dims" id="output-size-dims">1320 × 2868</span>
+                            </div>
+                            <svg class="dropdown-arrow" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <polyline points="6 9 12 15 18 9"/>
+                            </svg>
+                        </button>
+                        <div class="output-size-menu" id="output-size-menu">
+                            <div class="device-option selected" data-device="iphone-6.9">
+                                <span class="device-option-name">iPhone 6.9"</span>
+                                <span class="device-option-size">1320 × 2868</span>
+                            </div>
+                            <div class="device-option" data-device="iphone-6.7">
+                                <span class="device-option-name">iPhone 6.7"</span>
+                                <span class="device-option-size">1290 × 2796</span>
+                            </div>
+                            <div class="device-option" data-device="iphone-6.5">
+                                <span class="device-option-name">iPhone 6.5"</span>
+                                <span class="device-option-size">1284 × 2778</span>
+                            </div>
+                            <div class="device-option" data-device="iphone-5.5">
+                                <span class="device-option-name">iPhone 5.5"</span>
+                                <span class="device-option-size">1242 × 2208</span>
+                            </div>
+                            <div class="output-size-divider"></div>
+                            <div class="device-option" data-device="ipad-12.9">
+                                <span class="device-option-name">iPad 12.9"</span>
+                                <span class="device-option-size">2048 × 2732</span>
+                            </div>
+                            <div class="device-option" data-device="ipad-11">
+                                <span class="device-option-name">iPad 11"</span>
+                                <span class="device-option-size">1668 × 2388</span>
+                            </div>
+                            <div class="output-size-divider"></div>
+                            <div class="device-option" data-device="android-phone">
+                                <span class="device-option-name">Android Phone</span>
+                                <span class="device-option-size">1080 × 1920</span>
+                            </div>
+                            <div class="device-option" data-device="android-phone-hd">
+                                <span class="device-option-name">Android Phone HD</span>
+                                <span class="device-option-size">1440 × 2560</span>
+                            </div>
+                            <div class="device-option" data-device="android-tablet-7">
+                                <span class="device-option-name">Android Tablet 7"</span>
+                                <span class="device-option-size">1200 × 1920</span>
+                            </div>
+                            <div class="device-option" data-device="android-tablet-10">
+                                <span class="device-option-name">Android Tablet 10"</span>
+                                <span class="device-option-size">1600 × 2560</span>
+                            </div>
+                            <div class="output-size-divider"></div>
+                            <div class="device-option" data-device="web-og">
+                                <span class="device-option-name">Open Graph</span>
+                                <span class="device-option-size">1200 × 630</span>
+                            </div>
+                            <div class="device-option" data-device="web-twitter">
+                                <span class="device-option-name">Twitter/X Card</span>
+                                <span class="device-option-size">1200 × 675</span>
+                            </div>
+                            <div class="device-option" data-device="web-hero">
+                                <span class="device-option-name">Website Hero</span>
+                                <span class="device-option-size">1920 × 1080</span>
+                            </div>
+                            <div class="device-option" data-device="web-feature">
+                                <span class="device-option-name">Feature Graphic</span>
+                                <span class="device-option-size">1024 × 500</span>
+                            </div>
+                            <div class="output-size-divider"></div>
+                            <div class="device-option" data-device="custom">
+                                <span class="device-option-name">Custom Size</span>
+                                <span class="device-option-size">Set dimensions</span>
+                            </div>
+                            <div id="custom-size-inputs" class="custom-size-inputs">
+                                <input type="number" id="custom-width" value="1290" min="100" max="4000" placeholder="Width">
+                                <span class="custom-size-x">×</span>
+                                <input type="number" id="custom-height" value="2796" min="100" max="4000" placeholder="Height">
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="canvas-toolbar-group">
+                    <div class="zoom-controls">
+                        <button class="toolbar-btn" id="zoom-out" title="Zoom out">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <line x1="5" y1="12" x2="19" y2="12"/>
+                            </svg>
+                        </button>
+                        <input type="range" class="zoom-slider" id="zoom-slider" min="10" max="400" step="5" value="100">
+                        <button class="toolbar-btn" id="zoom-in" title="Zoom in">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <line x1="12" y1="5" x2="12" y2="19"/>
+                                <line x1="5" y1="12" x2="19" y2="12"/>
+                            </svg>
+                        </button>
+                        <span class="zoom-level-label" id="zoom-level">100%</span>
+                        <button class="toolbar-btn" id="zoom-reset" title="Reset zoom (fit to view)">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M8 3H5a2 2 0 00-2 2v3m18 0V5a2 2 0 00-2-2h-3m0 18h3a2 2 0 002-2v-3M3 16v3a2 2 0 002 2h3"/>
+                            </svg>
+                        </button>
+                    </div>
+                </div>
+            </div>
             <div class="preview-strip">
                 <div class="side-preview side-preview-far-left" id="side-preview-far-left">
                     <canvas id="preview-canvas-far-left"></canvas>
@@ -307,6 +333,11 @@
                 <div class="canvas-wrapper" id="canvas-wrapper">
                     <canvas id="preview-canvas"></canvas>
                     <div id="threejs-container" style="display: none;"></div>
+                    <button class="canvas-delete-btn" id="delete-current" title="Delete this screenshot">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M3 6h18M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2m3 0v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6h14zM10 11v6M14 11v6"/>
+                        </svg>
+                    </button>
                     <div class="no-screenshot" id="no-screenshot">
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1">
                             <rect x="3" y="3" width="18" height="18" rx="2"/>
@@ -1960,6 +1991,7 @@
         </div>
     </div>
 
+    <script src="config.local.js"></script>
     <script src="llm.js"></script>
     <script src="language-utils.js"></script>
     <script src="magical-titles.js"></script>

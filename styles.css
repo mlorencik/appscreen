@@ -883,6 +883,11 @@ input[type="range"]::-webkit-slider-thumb {
     background: var(--bg-primary);
     overflow: hidden;
     position: relative;
+    cursor: grab;
+}
+
+.canvas-area:active {
+    cursor: grabbing;
 }
 
 .preview-strip {
@@ -953,6 +958,199 @@ input[type="range"]::-webkit-slider-thumb {
 
 #preview-canvas {
     display: block;
+}
+
+/* Canvas toolbar (format selector, zoom, delete) */
+.canvas-toolbar {
+    cursor: default;
+    position: absolute;
+    top: 16px;
+    left: 24px;
+    right: 24px;
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 16px;
+    z-index: 20;
+}
+
+.canvas-toolbar-group {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.canvas-toolbar .output-size-dropdown {
+    flex: none;
+    width: 200px;
+}
+
+.canvas-toolbar .output-size-trigger {
+    background: var(--bg-secondary);
+    box-shadow: 0 8px 24px var(--shadow-color);
+}
+
+.canvas-toolbar .output-size-menu {
+    top: calc(100% + 4px);
+    bottom: auto;
+    transform: translateY(-10px);
+    box-shadow: 0 8px 24px var(--shadow-heavy);
+    max-height: min(480px, calc(100vh - 140px));
+    overflow-y: auto;
+}
+
+.canvas-toolbar .output-size-dropdown.open .output-size-menu {
+    transform: translateY(0);
+}
+
+.toolbar-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    padding: 0;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    color: var(--text-secondary);
+    cursor: pointer;
+    transition: all 0.15s;
+    flex-shrink: 0;
+    box-shadow: 0 8px 24px var(--shadow-color);
+}
+
+.toolbar-btn:hover {
+    background: var(--bg-tertiary);
+    color: var(--text-primary);
+    border-color: var(--text-secondary);
+}
+
+.toolbar-btn.danger:hover {
+    color: #ff453a;
+    border-color: #ff453a;
+    background: rgba(255, 69, 58, 0.12);
+}
+
+.toolbar-btn:disabled {
+    opacity: 0.4;
+    pointer-events: none;
+}
+
+.zoom-controls {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    padding: 4px 8px;
+    box-shadow: 0 8px 24px var(--shadow-color);
+}
+
+.zoom-controls .toolbar-btn {
+    background: transparent;
+    border: none;
+    box-shadow: none;
+    width: 26px;
+    height: 26px;
+}
+
+.zoom-slider {
+    width: 110px;
+    accent-color: var(--accent);
+    cursor: pointer;
+}
+
+.zoom-level-label {
+    min-width: 40px;
+    text-align: center;
+    font-size: 11px;
+    font-weight: 500;
+    color: var(--text-secondary);
+}
+
+/* Zoomed preview state */
+.preview-strip.zoomed,
+.preview-strip.dragging {
+    transition: none;
+}
+
+.preview-strip.zoomed-in .side-preview {
+    opacity: 0;
+    pointer-events: none;
+}
+
+.preview-strip.zoomed #preview-canvas {
+    cursor: grab;
+}
+
+.preview-strip.zoomed #preview-canvas.panning {
+    cursor: grabbing;
+}
+
+/* Delete button pinned to the selected canvas tile */
+.canvas-delete-btn {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    z-index: 6;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    padding: 0;
+    background: rgba(0, 0, 0, 0.55);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    border-radius: 8px;
+    color: #fff;
+    cursor: pointer;
+    opacity: 0;
+    transform-origin: top right;
+    transform: scale(min(1, calc(1 / var(--pz, 1))));
+    transition: opacity 0.15s, background 0.15s;
+    backdrop-filter: blur(6px);
+}
+
+.canvas-wrapper:hover .canvas-delete-btn,
+.canvas-delete-btn:focus-visible {
+    opacity: 1;
+}
+
+.canvas-delete-btn:hover {
+    background: rgba(255, 69, 58, 0.85);
+}
+
+.canvas-delete-btn:disabled {
+    display: none;
+}
+
+/* Quick delete button on screenshot items */
+.screenshot-quick-delete {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 22px;
+    height: 22px;
+    padding: 0;
+    background: transparent;
+    border: none;
+    border-radius: 6px;
+    color: var(--text-secondary);
+    cursor: pointer;
+    opacity: 0;
+    transition: opacity 0.15s, color 0.15s, background 0.15s;
+    flex-shrink: 0;
+}
+
+.screenshot-item:hover .screenshot-quick-delete {
+    opacity: 1;
+}
+
+.screenshot-quick-delete:hover {
+    color: #ff453a;
+    background: rgba(255, 69, 58, 0.15);
 }
 
 #preview-canvas-left,
