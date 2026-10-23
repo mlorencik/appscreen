@@ -589,6 +589,36 @@ html.tauri-app .right-sidebar {
     justify-content: center;
 }
 
+.slider-step-btn {
+    width: 20px;
+    height: 20px;
+    padding: 0;
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    background: var(--bg-tertiary);
+    color: var(--text-secondary);
+    font-size: 14px;
+    line-height: 1;
+    cursor: pointer;
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: color 0.15s, border-color 0.15s, background 0.15s;
+    user-select: none;
+    touch-action: none;
+}
+
+.slider-step-btn:hover {
+    color: var(--accent);
+    border-color: var(--accent);
+}
+
+.slider-step-btn:active {
+    background: var(--accent-subtle);
+    color: var(--accent);
+}
+
 .control-row:hover .slider-reset-btn {
     opacity: 0.5;
 }
@@ -2682,6 +2712,27 @@ input[type="range"]::-webkit-slider-thumb {
 .sidebar-header-buttons {
     display: flex;
     gap: 4px;
+    align-items: center;
+}
+
+.lang-nav-btn {
+    width: 24px;
+    height: 32px;
+    border: none;
+    border-radius: 8px;
+    background: var(--bg-tertiary);
+    color: var(--text-secondary);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s;
+    flex-shrink: 0;
+}
+
+.lang-nav-btn:hover {
+    background: var(--bg-primary);
+    color: var(--text-primary);
 }
 
 .settings-btn img {
@@ -3724,4 +3775,215 @@ input[type="range"]::-webkit-slider-thumb {
 .element-item-thumb .emoji-thumb {
     font-size: 18px;
     line-height: 1;
+}
+/* ===== Auto-capture Modal ===== */
+.capture-modal {
+    max-width: 560px;
+    width: 92%;
+    text-align: left;
+    max-height: 90vh;
+    overflow-y: auto;
+}
+
+.capture-modal .modal-title {
+    margin-bottom: 0;
+}
+
+.capture-modal .modal-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 8px;
+}
+
+.capture-modal .modal-message {
+    margin-bottom: 14px;
+}
+
+.capture-modal .control-group {
+    margin-bottom: 14px;
+}
+
+.capture-modal input[type="text"],
+.capture-modal input[type="number"],
+.capture-modal select,
+.capture-modal textarea {
+    width: 100%;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    color: var(--text-primary);
+    padding: 10px 12px;
+    font-size: 13px;
+    font-family: inherit;
+    box-sizing: border-box;
+}
+
+.capture-modal textarea {
+    resize: vertical;
+    font-family: 'SF Mono', Consolas, monospace;
+    font-size: 12px;
+    line-height: 1.5;
+}
+
+.capture-modal input:focus,
+.capture-modal select:focus,
+.capture-modal textarea:focus {
+    outline: none;
+    border-color: var(--accent);
+}
+
+.capture-row {
+    display: flex;
+    gap: 12px;
+}
+
+.capture-row .control-group {
+    flex: 1;
+    min-width: 0;
+}
+
+.capture-server-status {
+    font-size: 12px;
+    padding: 8px 12px;
+    border-radius: 8px;
+    margin-bottom: 14px;
+    background: var(--bg-tertiary);
+    color: var(--text-secondary);
+    border: 1px solid var(--border-color);
+}
+
+.capture-server-status.ok {
+    color: #30d158;
+    border-color: rgba(48, 209, 88, 0.35);
+    background: rgba(48, 209, 88, 0.08);
+}
+
+.capture-server-status.error {
+    color: #ff453a;
+    border-color: rgba(255, 69, 58, 0.35);
+    background: rgba(255, 69, 58, 0.08);
+}
+
+.capture-advanced {
+    margin-bottom: 14px;
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    padding: 10px 12px;
+}
+
+.capture-advanced summary {
+    cursor: pointer;
+    font-size: 12px;
+    color: var(--text-secondary);
+    user-select: none;
+}
+
+.capture-advanced[open] summary {
+    margin-bottom: 12px;
+}
+
+.capture-hint {
+    font-size: 11px;
+    color: var(--text-secondary);
+    opacity: 0.7;
+    margin-top: 6px;
+    line-height: 1.5;
+}
+
+.capture-hint-inline {
+    font-weight: normal;
+    font-size: 10px;
+    color: var(--text-secondary);
+    opacity: 0.7;
+}
+
+.text-input.locked {
+    opacity: 0.6;
+    cursor: not-allowed;
+    border-style: dashed;
+}
+
+.capture-progress {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 10px;
+}
+
+.capture-progress-track {
+    flex: 1;
+    height: 8px;
+    background: var(--bg-secondary, rgba(255,255,255,0.08));
+    border-radius: 4px;
+    overflow: hidden;
+}
+
+.capture-progress-fill {
+    height: 100%;
+    width: 0%;
+    background: linear-gradient(90deg, #4a9eff, #34d399);
+    border-radius: 4px;
+    transition: width 0.4s ease;
+}
+
+.capture-progress-text {
+    font-size: 11px;
+    color: var(--text-secondary);
+    min-width: 44px;
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+}
+
+.capture-log {
+    max-height: 160px;
+    overflow-y: auto;
+    font-family: 'SF Mono', Consolas, monospace;
+    font-size: 11px;
+    line-height: 1.7;
+    background: var(--bg-primary);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    padding: 10px 12px;
+    margin-bottom: 16px;
+    display: none;
+}
+
+.capture-log.active {
+    display: block;
+}
+
+.capture-log .log-ok { color: #30d158; }
+.capture-log .log-error { color: #ff453a; }
+.capture-log .log-info { color: var(--text-secondary); }
+
+.capture-modal .modal-buttons {
+    margin-top: 0;
+}
+
+.capture-auth-row {
+    display: flex;
+    gap: 8px;
+}
+
+.capture-auth-row select {
+    flex: 1;
+    min-width: 0;
+}
+
+.capture-login-btn {
+    padding: 10px 14px;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    color: var(--text-primary);
+    font-size: 12px;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: all 0.15s;
+}
+
+.capture-login-btn:hover {
+    border-color: var(--accent);
+    color: var(--accent);
 }

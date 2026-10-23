@@ -112,3 +112,18 @@ Open `http://localhost:8000` in browser. Opening `index.html` directly from file
 - **GLTFLoader** - loads iPhone 3D model
 - **JSZip** - creates ZIP files for batch export
 - **Google Fonts API** - font picker with 1500+ fonts
+
+## Auto-capture (Playwright)
+
+`tools/capture-server.js` is a small Node HTTP server (127.0.0.1:3777) that captures live pages as screenshots in all project languages. Run it with `node tools/capture-server.js` or `start-capture.bat`.
+
+- Resolves Playwright from `../learnme/app/node_modules` (or `PLAYWRIGHT_PATH`)
+- Per locale: isolated context with `NEXT_LOCALE`/`NEXT_LOCALE_CHOICE` cookies + `locale`/`Accept-Language`
+- Auth: `storageState` profiles from `tools/.auth/` (saved via `POST /login`) or `learnme/app/e2e/.auth/`; `tools/.auth/` is gitignored. `POST /login` with a profile listed in the gitignored `tools/accounts.json` (see `accounts.example.json`) logs in headlessly; other profiles open a headed login window that auto-closes after 3 min
+- Endpoints: `GET /health`, `GET /profiles`, `GET /scenarios`, `POST /login`, `POST /check-auth`, `POST /capture` (returns `jobId`), `GET /job?id=`
+- Robustness: `goto` retries once on nav timeout (90s default), then `waitForContentSettle` polls `innerText` until stable, then skeleton loaders are waited out, and `analyzeShot` rejects blank/gray PNGs (one auto-retry, then `error` status) — fixed ms waits alone miss slow SSR; concurrency is 2 because the dev backend is single-threaded
+- The UI has a "Retry N failed" button that re-runs only failed locales and merges them into the same screenshot (`mergeIndex` path in `buildCapturedScreenshot`), plus a "Retake" row that re-captures a single chosen language into the selected screenshot
+- Capture spec supports `steps` (goto/click/fill/press/hover/wait/waitFor/scrollTo/eval/apiFetch/evalFile) for reaching filled-in states; `apiFetch` stores `{var}` template values from page-context API responses, `evalFile` runs `tools/steps/*.js` with `arg`
+- `POST /login` verifies the saved state (`verified`, `meStatus`) after the window closes; `POST /check-auth` probes session + `/api/me` for a profile; captures that land on login/welcome return `status:'auth'` instead of a useless screenshot
+- `tools/scenarios.json` — preset screen catalog (gitignored, private); UI fills URL/steps from the "Scenario" select in `#capture-modal`
+- UI entry point: "Auto-capture" button → `#capture-modal` (app.js `setupCaptureModal`, `CAPTURE_PRESETS` viewport map)

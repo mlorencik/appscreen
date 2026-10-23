@@ -45,6 +45,8 @@ const state = {
             use3D: false,
             device3D: 'iphone',
             rotation3D: { x: 0, y: 0, z: 0 },
+            screenInset: 0,
+            screenInsetTop: 0,
             shadow: {
                 enabled: true,
                 color: '#000000',
@@ -78,13 +80,17 @@ const state = {
                     headlineSize: 100,
                     subheadlineSize: 50,
                     position: 'top',
+                    align: 'center',
                     offsetY: 12,
+                    offsetX: 50,
                     lineHeight: 110
                 }
             },
             currentLayoutLang: 'pl',
             position: 'top',
+            align: 'center',
             offsetY: 12,
+            offsetX: 50,
             lineHeight: 110,
             subheadlineEnabled: false,
             subheadlines: emptyLangTexts(),
@@ -221,6 +227,558 @@ function setupCanvasToolbar() {
     });
 }
 
+// ===== Auto-capture (local Playwright server) =====
+
+const CAPTURE_SERVER = 'http://127.0.0.1:3777';
+
+const CAPTURE_UA_IPHONE = 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1';
+const CAPTURE_UA_IPAD = 'Mozilla/5.0 (iPad; CPU OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1';
+const CAPTURE_UA_ANDROID = 'Mozilla/5.0 (Linux; Android 15; Pixel 9) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Mobile Safari/537.36';
+
+// Viewport CSS size × deviceScaleFactor ≈ output format pixels
+const CAPTURE_PRESETS = {
+    'iphone-6.9':        { viewport: { width: 440, height: 956 },   deviceScaleFactor: 3, isMobile: true, hasTouch: true, userAgent: CAPTURE_UA_IPHONE },
+    'iphone-6.7':        { viewport: { width: 430, height: 932 },   deviceScaleFactor: 3, isMobile: true, hasTouch: true, userAgent: CAPTURE_UA_IPHONE },
+    'iphone-6.5':        { viewport: { width: 428, height: 926 },   deviceScaleFactor: 3, isMobile: true, hasTouch: true, userAgent: CAPTURE_UA_IPHONE },
+    'iphone-5.5':        { viewport: { width: 414, height: 736 },   deviceScaleFactor: 3, isMobile: true, hasTouch: true, userAgent: CAPTURE_UA_IPHONE },
+    'ipad-12.9':         { viewport: { width: 1024, height: 1366 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true, userAgent: CAPTURE_UA_IPAD },
+    'ipad-11':           { viewport: { width: 834, height: 1194 },  deviceScaleFactor: 2, isMobile: true, hasTouch: true, userAgent: CAPTURE_UA_IPAD },
+    'android-phone':     { viewport: { width: 360, height: 640 },   deviceScaleFactor: 3, isMobile: true, hasTouch: true, userAgent: CAPTURE_UA_ANDROID },
+    'android-phone-hd':  { viewport: { width: 360, height: 640 },   deviceScaleFactor: 4, isMobile: true, hasTouch: true, userAgent: CAPTURE_UA_ANDROID },
+    'android-tablet-7':  { viewport: { width: 600, height: 960 },   deviceScaleFactor: 2, isMobile: true, hasTouch: true, userAgent: CAPTURE_UA_ANDROID },
+    'android-tablet-10': { viewport: { width: 800, height: 1280 },  deviceScaleFactor: 2, isMobile: true, hasTouch: true, userAgent: CAPTURE_UA_ANDROID },
+    'web-og':            { viewport: { width: 1200, height: 630 },  deviceScaleFactor: 1 },
+    'web-twitter':       { viewport: { width: 1200, height: 675 },  deviceScaleFactor: 1 },
+    'web-hero':          { viewport: { width: 1920, height: 1080 }, deviceScaleFactor: 1 },
+    'web-feature':       { viewport: { width: 1024, height: 500 },  deviceScaleFactor: 1 },
+    'web-landing':       { viewport: { width: 1400, height: 1050 }, deviceScaleFactor: 1 },
+    'web-landing-preview': { viewport: { width: 1000, height: 625 }, deviceScaleFactor: 1 },
+};
+
+let captureJobRunning = false;
+
+function captureDeviceType(format) {
+    if (format.startsWith('iphone')) return 'iPhone';
+    if (format.startsWith('ipad')) return 'iPad';
+    if (format.startsWith('android')) return 'Android';
+    return undefined;
+}
+
+function capturePresetFor(format) {
+    if (format === 'custom') {
+        return {
+            viewport: {
+                width: parseInt(document.getElementById('custom-width')?.value, 10) || 1290,
+                height: parseInt(document.getElementById('custom-height')?.value, 10) || 2796,
+            },
+            deviceScaleFactor: 1,
+        };
+    }
+    return CAPTURE_PRESETS[format] || CAPTURE_PRESETS['iphone-6.9'];
+}
+
+function captureNameFromUrl(url) {
+    try {
+        const segments = new URL(url).pathname.replace(/\/+$/, '').split('/').filter(Boolean);
+        const seg = (segments[segments.length - 1] || 'capture');
+        return seg.replace(/[^a-zA-Z0-9\-_ ]/g, '').slice(0, 40) || 'capture';
+    } catch {
+        return 'capture';
+    }
+}
+
+function captureLog(msg, cls) {
+    const log = document.getElementById('capture-log');
+    if (!log) return;
+    log.classList.add('active');
+    const line = document.createElement('div');
+    line.className = cls || 'log-info';
+    line.textContent = msg;
+    log.appendChild(line);
+    log.scrollTop = log.scrollHeight;
+}
+
+async function checkCaptureServer() {
+    const el = document.getElementById('capture-server-status');
+    if (!el) return false;
+    el.className = 'capture-server-status';
+    el.textContent = 'Checking capture server…';
+    try {
+        const res = await fetch(`${CAPTURE_SERVER}/health`, { signal: AbortSignal.timeout(3000) });
+        const data = await res.json();
+        if (data.ok && data.playwright) {
+            el.classList.add('ok');
+            el.textContent = 'Capture server running (Playwright loaded)';
+            return true;
+        }
+        throw new Error('no playwright');
+    } catch {
+        el.classList.add('error');
+        el.textContent = 'Capture server not reachable — run start-capture.bat first';
+        return false;
+    }
+}
+
+let captureScenarios = [];
+let captureScenariosBase = '';
+
+async function loadCaptureScenarios() {
+    const sel = document.getElementById('capture-scenario');
+    if (!sel || sel.dataset.loaded) return;
+    try {
+        const data = await fetch(`${CAPTURE_SERVER}/scenarios`, { signal: AbortSignal.timeout(3000) }).then(r => r.json());
+        captureScenarios = data.scenarios || [];
+        captureScenariosBase = data.baseUrl || 'http://localhost:3000';
+        for (const s of captureScenarios) {
+            const opt = document.createElement('option');
+            opt.value = s.id;
+            opt.textContent = s.name;
+            sel.appendChild(opt);
+        }
+        sel.dataset.loaded = '1';
+        // Restore last-used scenario
+        const last = localStorage.getItem('captureLastScenario');
+        if (last && [...sel.options].some(o => o.value === last)) {
+            sel.value = last;
+        }
+        if (sel.value) applyCaptureScenario(sel.value);
+    } catch {
+        // server without scenarios endpoint — custom URL still works
+    }
+}
+
+function applyCaptureScenario(id) {
+    const s = captureScenarios.find((x) => x.id === id);
+    const desc = document.getElementById('capture-scenario-desc');
+    const urlInput = document.getElementById('capture-url');
+    if (!s) {
+        // "Custom URL…" — field is editable again
+        if (urlInput) { urlInput.readOnly = false; urlInput.classList.remove('locked'); }
+        if (desc) desc.textContent = '';
+        return null;
+    }
+    // Scenario owns the URL — lock the field so it's clear nothing needs typing
+    urlInput.value = captureScenariosBase + (s.path || '/dashboard');
+    urlInput.readOnly = true;
+    urlInput.classList.add('locked');
+    document.getElementById('capture-steps').value = s.steps?.length ? JSON.stringify(s.steps, null, 2) : '';
+    document.getElementById('capture-wait-ms').value = s.waitMs ?? 2000;
+    document.getElementById('capture-wait-selector').value = s.waitSelector || '';
+    const fmt = document.getElementById('capture-format');
+    if (s.format && fmt.querySelector(`option[value="${s.format}"]`)) fmt.value = s.format;
+    if (desc) desc.textContent = s.description || '';
+    return s;
+}
+
+let captureAuthCheckTimer = null;
+function scheduleCaptureAuthCheck() {
+    clearTimeout(captureAuthCheckTimer);
+    captureAuthCheckTimer = setTimeout(checkCaptureAuth, 400);
+}
+
+async function checkCaptureAuth() {
+    const el = document.getElementById('capture-auth-status');
+    const auth = document.getElementById('capture-auth')?.value;
+    if (!el) return;
+    if (!auth || auth === 'none') {
+        el.textContent = '';
+        return;
+    }
+    el.textContent = `Checking "${auth}" session…`;
+    try {
+        const data = await fetch(`${CAPTURE_SERVER}/check-auth`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ auth, url: 'http://localhost:3000/dashboard' }),
+        }).then(r => r.json());
+        if (data.authenticated) {
+            el.textContent = `✓ ${auth}: logged in${data.sessionUser ? ` as ${data.sessionUser}` : ''} — /api/me OK`;
+        } else {
+            el.textContent = `✗ ${auth}: session stale (${data.error || `api/me → ${data.meStatus ?? '?'}`}) — click Login… to refresh`;
+        }
+    } catch {
+        el.textContent = '';
+    }
+}
+
+async function loadCaptureProfiles() {
+    const sel = document.getElementById('capture-auth');
+    if (!sel) return;
+    sel.innerHTML = '<option value="none">none (logged out)</option>';
+    try {
+        const data = await fetch(`${CAPTURE_SERVER}/profiles`, { signal: AbortSignal.timeout(3000) }).then(r => r.json());
+        (data.profiles || []).forEach((p) => {
+            const opt = document.createElement('option');
+            opt.value = p;
+            opt.textContent = p;
+            sel.appendChild(opt);
+        });
+        const preferred = ['demo', 'premium'];
+        for (const p of preferred) {
+            if ([...sel.options].some(o => o.value === p)) { sel.value = p; break; }
+        }
+    } catch {
+        // keep just "none"
+    }
+}
+
+function openCaptureModal() {
+    document.getElementById('capture-modal')?.classList.add('visible');
+    const retakeSel = document.getElementById('capture-retake-lang');
+    if (retakeSel) {
+        retakeSel.innerHTML = state.projectLanguages
+            .map((l) => `<option value="${l}"${l === state.currentLanguage ? ' selected' : ''}>${languageFlags[l] || ''} ${l.toUpperCase()}</option>`)
+            .join('');
+    }
+    checkCaptureServer().then((ok) => {
+        if (!ok) return;
+        Promise.all([loadCaptureProfiles(), loadCaptureScenarios()]).then(() => {
+            scheduleCaptureAuthCheck();
+        });
+    });
+}
+
+function closeCaptureModal() {
+    document.getElementById('capture-modal')?.classList.remove('visible');
+}
+
+function setupCaptureModal() {
+    document.getElementById('auto-capture-btn')?.addEventListener('click', openCaptureModal);
+    document.getElementById('capture-modal-close')?.addEventListener('click', closeCaptureModal);
+    document.getElementById('capture-modal-cancel')?.addEventListener('click', closeCaptureModal);
+    document.getElementById('capture-modal')?.addEventListener('click', (e) => {
+        if (e.target.id === 'capture-modal') closeCaptureModal();
+    });
+    document.getElementById('capture-start')?.addEventListener('click', startCapture);
+    document.getElementById('capture-retry')?.addEventListener('click', retryCaptureFailed);
+    document.getElementById('capture-retake')?.addEventListener('click', retakeCaptureLanguage);
+    document.getElementById('capture-login-btn')?.addEventListener('click', captureLogin);
+    document.getElementById('capture-scenario')?.addEventListener('change', (e) => {
+        localStorage.setItem('captureLastScenario', e.target.value);
+        applyCaptureScenario(e.target.value);
+    });
+    document.getElementById('capture-auth')?.addEventListener('change', scheduleCaptureAuthCheck);
+}
+
+async function captureLogin() {
+    const btn = document.getElementById('capture-login-btn');
+    const url = document.getElementById('capture-url').value.trim();
+    const sel = document.getElementById('capture-auth');
+    const profile = (sel.value && sel.value !== 'none') ? sel.value : 'default';
+    btn.disabled = true;
+    if (profile === 'demo') {
+        captureLog(`Logging in "demo" (screenshots@learnme.pro) automatically…`, 'log-info');
+    } else {
+        captureLog(`Login "${profile}" — a login window will open (auto-closes after 3 min). Log in, then close the window to save the session.`, 'log-info');
+    }
+    try {
+        const data = await fetch(`${CAPTURE_SERVER}/login`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                profile,
+                url: /^https?:\/\//.test(url) ? url : 'http://localhost:3000',
+            }),
+        }).then(r => r.json());
+        if (data.ok) {
+            if (data.verified) {
+                captureLog(`Session saved as "${data.profile}" — verified (api/me OK)`, 'log-ok');
+            } else {
+                captureLog(`Session saved as "${data.profile}" but api/me → ${data.meStatus ?? '?'} — make sure you finished logging in before closing the window`, 'log-error');
+            }
+            await loadCaptureProfiles();
+            sel.value = data.profile;
+            scheduleCaptureAuthCheck();
+        } else {
+            captureLog(`Login failed: ${data.error}`, 'log-error');
+        }
+    } catch (e) {
+        captureLog(`Login failed: ${e.message}`, 'log-error');
+    } finally {
+        btn.disabled = false;
+    }
+}
+
+async function startCapture() {
+    if (captureJobRunning) return;
+
+    const built = buildCaptureSpec();
+    if (!built) return;
+    document.getElementById('capture-log').innerHTML = '';
+    await runCaptureSpec(built.spec, built.name, built.format);
+}
+
+function buildCaptureSpec() {
+    const url = document.getElementById('capture-url').value.trim();
+    if (!/^https?:\/\//.test(url)) {
+        captureLog('Enter a valid http(s) URL', 'log-error');
+        return null;
+    }
+    const format = document.getElementById('capture-format').value;
+    const scenarioId = document.getElementById('capture-scenario')?.value || '';
+    const scenario = captureScenarios.find((x) => x.id === scenarioId);
+
+    let steps = [];
+    const stepsText = document.getElementById('capture-steps').value.trim();
+    if (stepsText) {
+        try {
+            steps = JSON.parse(stepsText);
+            if (!Array.isArray(steps)) throw new Error('not an array');
+        } catch {
+            captureLog('Steps JSON is invalid', 'log-error');
+            return null;
+        }
+    }
+
+    return {
+        spec: {
+            url,
+            locales: [...state.projectLanguages],
+            ...capturePresetFor(format),
+            auth: document.getElementById('capture-auth').value,
+            wait: {
+                selector: document.getElementById('capture-wait-selector').value.trim() || undefined,
+                ms: parseInt(document.getElementById('capture-wait-ms').value, 10) || undefined,
+            },
+            steps,
+        },
+        name: scenario?.id || url,
+        format,
+    };
+}
+
+// Re-capture a single language and merge it into the currently selected
+// screenshot — the escape hatch for a locale that came out blank/broken.
+async function retakeCaptureLanguage() {
+    if (captureJobRunning) return;
+    const idx = state.selectedIndex;
+    if (!state.screenshots[idx]) {
+        captureLog('Select a screenshot first', 'log-error');
+        return;
+    }
+    const lang = document.getElementById('capture-retake-lang')?.value || state.currentLanguage;
+    const built = buildCaptureSpec();
+    if (!built) return;
+    built.spec.locales = [lang];
+    await runCaptureSpec(built.spec, built.name, built.format, idx);
+}
+
+let lastCapture = null; // { spec, name, format, index, failed: [langs] }
+
+async function retryCaptureFailed() {
+    if (!lastCapture || captureJobRunning) return;
+    const spec = { ...lastCapture.spec, locales: [...lastCapture.failed] };
+    document.getElementById('capture-log').innerHTML = '';
+    await runCaptureSpec(spec, lastCapture.name, lastCapture.format, lastCapture.index);
+}
+
+async function runCaptureSpec(spec, name, format, mergeIndex) {
+    captureJobRunning = true;
+    const startBtn = document.getElementById('capture-start');
+    const retryBtn = document.getElementById('capture-retry');
+    startBtn.disabled = true;
+    if (retryBtn) retryBtn.disabled = true;
+    captureLog(`Starting: ${spec.url} — ${spec.locales.length} languages, ${format}`);
+    updateCaptureProgress(0, spec.locales.length);
+
+    try {
+        const data = await fetch(`${CAPTURE_SERVER}/capture`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(spec),
+        }).then(r => r.json());
+        if (!data.ok) throw new Error(data.error || 'capture failed');
+
+        let results;
+        try {
+            results = await pollCaptureJob(data.jobId, spec.locales.length);
+        } catch (e) {
+            // Poll timed out — salvage whatever the job produced and let
+            // auto-retry pick up the missing locales.
+            captureLog(`${e.message} — salvaging partial results`, 'log-error');
+            const finalData = await fetch(`${CAPTURE_SERVER}/job?id=${data.jobId}`)
+                .then(r => r.json()).catch(() => null);
+            results = finalData?.results || {};
+            for (const lang of spec.locales) {
+                if (!results[lang] || results[lang].status === 'running') {
+                    results[lang] = { status: 'error', error: 'capture timed out' };
+                }
+            }
+        }
+        results = await autoRetryTimeouts(spec, results);
+        const idx = await buildCapturedScreenshot(results, name, format, mergeIndex);
+        if (idx != null) {
+            const runFailed = Object.keys(results).filter(
+                (l) => results[l]?.status !== 'ok' || !results[l].image
+            );
+            if (mergeIndex != null && lastCapture) {
+                lastCapture.failed = lastCapture.failed.filter((l) => runFailed.includes(l));
+            } else {
+                lastCapture = { spec, name, format, index: idx, failed: runFailed };
+            }
+            updateRetryButton();
+        }
+    } catch (e) {
+        captureLog(`Error: ${e.message}`, 'log-error');
+    } finally {
+        captureJobRunning = false;
+        startBtn.disabled = false;
+        updateRetryButton();
+        updateCaptureProgress(0, 0);
+    }
+}
+
+function updateCaptureProgress(done, total) {
+    const wrap = document.getElementById('capture-progress');
+    const fill = document.getElementById('capture-progress-fill');
+    const text = document.getElementById('capture-progress-text');
+    if (!wrap || !fill || !text) return;
+    if (!total) {
+        wrap.style.display = 'none';
+        fill.style.width = '0%';
+        text.textContent = '0 / 0';
+        return;
+    }
+    wrap.style.display = '';
+    fill.style.width = `${Math.round((done / total) * 100)}%`;
+    text.textContent = `${done} / ${total}`;
+}
+
+// Re-run locales that failed with a navigation timeout (slow SSR) — up to
+// 2 automatic attempts merged into the same result set.
+async function autoRetryTimeouts(spec, results, maxAttempts = 2) {
+    const merged = { ...results };
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+        const timeouts = Object.keys(merged).filter(
+            (l) => /timeout/i.test(merged[l]?.error || '')
+        );
+        if (!timeouts.length) break;
+        captureLog(
+            `Auto-retry ${timeouts.length} timed-out language(s): ${timeouts.join(', ')} (${attempt}/${maxAttempts})`,
+            'log-info'
+        );
+        try {
+            const data = await fetch(`${CAPTURE_SERVER}/capture`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ ...spec, locales: timeouts }),
+            }).then(r => r.json());
+            if (!data.ok) {
+                captureLog(`Auto-retry rejected: ${data.error}`, 'log-error');
+                break;
+            }
+            const retryResults = await pollCaptureJob(data.jobId, timeouts.length);
+            Object.assign(merged, retryResults);
+        } catch (e) {
+            captureLog(`Auto-retry error: ${e.message}`, 'log-error');
+            break;
+        }
+    }
+    return merged;
+}
+
+function updateRetryButton() {
+    const btn = document.getElementById('capture-retry');
+    if (!btn) return;
+    const n = lastCapture?.failed?.length || 0;
+    btn.style.display = n ? '' : 'none';
+    btn.textContent = `Retry ${n} failed`;
+    btn.disabled = !n || captureJobRunning;
+}
+
+function pollCaptureJob(jobId, totalLocales = 0) {
+    const seen = {};
+    // Scale the absolute cap with job size — 24 locales on a single-threaded
+    // dev backend legitimately take >10 min. Stall detection below also
+    // aborts early if nothing progresses for 4 minutes.
+    const maxWait = Math.max(10 * 60 * 1000, totalLocales * 40 * 1000);
+    let lastDone = 0;
+    let lastProgressAt = Date.now();
+    return new Promise((resolve, reject) => {
+        const timeout = setTimeout(() => {
+            clearInterval(timer);
+            reject(new Error('capture timed out'));
+        }, maxWait);
+        const timer = setInterval(async () => {
+            try {
+                const data = await fetch(`${CAPTURE_SERVER}/job?id=${jobId}`).then(r => r.json());
+                updateCaptureProgress(data.done || 0, data.total || 0);
+                if ((data.done || 0) > lastDone) {
+                    lastDone = data.done;
+                    lastProgressAt = Date.now();
+                } else if (!data.finished && Date.now() - lastProgressAt > 4 * 60 * 1000) {
+                    clearInterval(timer);
+                    clearTimeout(timeout);
+                    reject(new Error('capture stalled (no progress for 4 min)'));
+                    return;
+                }
+                Object.entries(data.results || {}).forEach(([lang, r]) => {
+                    if (seen[lang] || r.status === 'running') return;
+                    seen[lang] = true;
+                    if (r.status === 'ok') captureLog(`${lang} ✓`, 'log-ok');
+                    else captureLog(`${lang} ✗ ${r.error || 'failed'}`, 'log-error');
+                });
+                if (data.finished) {
+                    clearInterval(timer);
+                    clearTimeout(timeout);
+                    resolve(data.results || {});
+                }
+            } catch {
+                // transient poll failure — retry on next tick
+            }
+        }, 1200);
+    });
+}
+
+function loadCaptureImage(src) {
+    return new Promise((resolve, reject) => {
+        const img = new Image();
+        img.onload = () => resolve(img);
+        img.onerror = () => reject(new Error('image decode failed'));
+        img.src = src;
+    });
+}
+
+async function buildCapturedScreenshot(results, nameOrUrl, format, mergeIndex) {
+    const okLangs = Object.keys(results || {}).filter(
+        (l) => results[l]?.status === 'ok' && results[l].image
+    );
+    if (okLangs.length === 0) {
+        captureLog('No screenshots captured', 'log-error');
+        return mergeIndex ?? null;
+    }
+
+    const name = /^https?:\/\//.test(nameOrUrl) ? captureNameFromUrl(nameOrUrl) : nameOrUrl;
+    let idx = (mergeIndex != null && state.screenshots[mergeIndex]) ? mergeIndex : -1;
+    let langs = okLangs;
+    if (idx < 0) {
+        const firstLang = okLangs[0];
+        const firstImg = await loadCaptureImage(results[firstLang].image);
+        createNewScreenshot(firstImg, results[firstLang].image, name, firstLang, captureDeviceType(format));
+        idx = state.screenshots.length - 1;
+        langs = okLangs.slice(1);
+        state.screenshots[idx].outputDevice = format;
+    }
+
+    for (const lang of langs) {
+        const img = await loadCaptureImage(results[lang].image);
+        addLocalizedImage(idx, lang, img, results[lang].image, `${name}_${lang}.png`);
+    }
+
+    state.selectedIndex = idx;
+    updateScreenshotList();
+    syncUIWithState();
+    updateCanvas();
+    saveState();
+
+    const failed = Object.keys(results).length - okLangs.length;
+    captureLog(
+        `Done — "${name}" with ${okLangs.length} language versions` + (failed ? ` (${failed} failed)` : ''),
+        'log-ok'
+    );
+    return idx;
+}
+
 // Preload laurel SVG images for element frames
 const laurelImages = {};
 ['laurel-simple-left', 'laurel-detailed-left'].forEach(name => {
@@ -271,7 +829,9 @@ function getTextLanguageSettings(text, lang) {
             headlineSize: sourceSettings ? sourceSettings.headlineSize : (text.headlineSize || 100),
             subheadlineSize: sourceSettings ? sourceSettings.subheadlineSize : (text.subheadlineSize || 50),
             position: sourceSettings ? sourceSettings.position : (text.position || 'top'),
+            align: sourceSettings ? sourceSettings.align : (text.align || 'center'),
             offsetY: sourceSettings ? sourceSettings.offsetY : (typeof text.offsetY === 'number' ? text.offsetY : 12),
+            offsetX: sourceSettings ? sourceSettings.offsetX : (typeof text.offsetX === 'number' ? text.offsetX : 50),
             lineHeight: sourceSettings ? sourceSettings.lineHeight : (text.lineHeight || 110)
         };
     }
@@ -284,7 +844,9 @@ function getEffectiveLayout(text, lang) {
             headlineSize: text.headlineSize || 100,
             subheadlineSize: text.subheadlineSize || 50,
             position: text.position || 'top',
+            align: text.align || 'center',
             offsetY: typeof text.offsetY === 'number' ? text.offsetY : 12,
+            offsetX: typeof text.offsetX === 'number' ? text.offsetX : 50,
             lineHeight: text.lineHeight || 110
         };
     }
@@ -440,6 +1002,7 @@ function addGraphicElement(img, src, name) {
         image: img,
         src: src,
         name: name || 'Graphic',
+        bg: { enabled: false, color: '#ffffff', opacity: 100, padding: 10, radius: 24 },
         text: '',
         font: "-apple-system, BlinkMacSystemFont, 'SF Pro Display'",
         fontSize: 60,
@@ -648,6 +1211,36 @@ function setupSliderResetButtons() {
             slider.dispatchEvent(new Event('input', { bubbles: true }));
         });
         row.appendChild(btn);
+
+        if (!row.querySelector('.slider-step-btn')) {
+            const mkStep = (dir) => {
+                const b = document.createElement('button');
+                b.className = 'slider-step-btn';
+                b.type = 'button';
+                b.textContent = dir < 0 ? '−' : '+';
+                b.title = dir < 0 ? 'Decrease' : 'Increase';
+                const step = () => {
+                    const s = parseFloat(slider.step) || 1;
+                    const min = parseFloat(slider.min) || 0;
+                    const max = parseFloat(slider.max) || 100;
+                    const v = Math.min(max, Math.max(min, (parseFloat(slider.value) || 0) + dir * s));
+                    slider.value = Math.round(v * 1000) / 1000;
+                    slider.dispatchEvent(new Event('input', { bubbles: true }));
+                };
+                let repeat = null;
+                b.addEventListener('pointerdown', (e) => {
+                    e.preventDefault();
+                    step();
+                    repeat = setTimeout(() => { repeat = setInterval(step, 80); }, 400);
+                });
+                const stop = () => { clearTimeout(repeat); clearInterval(repeat); repeat = null; };
+                b.addEventListener('pointerup', stop);
+                b.addEventListener('pointerleave', stop);
+                return b;
+            };
+            slider.parentNode.insertBefore(mkStep(-1), slider);
+            slider.parentNode.insertBefore(mkStep(1), slider.nextSibling);
+        }
     });
 }
 
@@ -1368,7 +1961,9 @@ const deviceDimensions = {
     'web-og': { width: 1200, height: 630 },
     'web-twitter': { width: 1200, height: 675 },
     'web-hero': { width: 1920, height: 1080 },
-    'web-feature': { width: 1024, height: 500 }
+    'web-feature': { width: 1024, height: 500 },
+    'web-landing': { width: 1400, height: 1050 },
+    'web-landing-preview': { width: 1000, height: 625 }
 };
 
 // Display labels matching the device-option names in index.html
@@ -1380,8 +1975,33 @@ const deviceLabels = {
     'android-tablet-7': 'Android Tablet 7"', 'android-tablet-10': 'Android Tablet 10"',
     'web-og': 'Open Graph', 'web-twitter': 'Twitter/X Card',
     'web-hero': 'Website Hero', 'web-feature': 'Feature Graphic',
+    'web-landing': 'Landing Page', 'web-landing-preview': 'Landing Preview',
     'custom': 'Custom'
 };
+
+// Well-known aspect ratios (long side / short side) matched with tolerance
+const ASPECT_RATIOS = [
+    [2.3333, '21:9'], [2.1667, '19.5:9'], [2.05, '~2:1'], [2, '2:1'], [1.905, '~1.9:1'],
+    [1.7778, '16:9'], [1.6, '16:10'], [1.5, '3:2'], [1.4333, '~10:7'], [1.3333, '4:3'], [1, '1:1']
+];
+
+function aspectRatioLabel(w, h) {
+    const r = Math.max(w, h) / Math.min(w, h);
+    for (const [v, name] of ASPECT_RATIOS) {
+        if (Math.abs(r - v) < 0.02) return name;
+    }
+    const gcd = (a, b) => b ? gcd(b, a % b) : a;
+    const g = gcd(w, h);
+    if (w / g <= 99 && h / g <= 99) return `${w / g}:${h / g}`;
+    return `~${r.toFixed(2)}:1`;
+}
+
+// "iPhone 6.9\" (1320×2868, 19.5:9)" — name + export resolution + aspect wherever a bare name isn't enough
+function deviceFormatLabel(fmt) {
+    const name = deviceLabels[fmt] || fmt;
+    const d = deviceDimensions[fmt];
+    return d ? `${name} (${d.width}×${d.height}, ${aspectRatioLabel(d.width, d.height)})` : name;
+}
 
 // DOM elements
 const canvas = document.getElementById('preview-canvas');
@@ -1669,7 +2289,7 @@ function saveState() {
 
     // Update screenshot count in project metadata
     const project = projects.find(p => p.id === currentProjectId);
-    if (project) {
+    if (project && project.screenshotCount !== state.screenshots.length) {
         project.screenshotCount = state.screenshots.length;
         saveProjectsMeta();
     }
@@ -2206,7 +2826,7 @@ async function deleteScreenshot(index) {
     if (!screenshot) return;
 
     const confirmed = await showAppConfirm(
-        `Delete "${getExportBasename(screenshot, index)}"?`,
+        `Delete "${screenshot.name || `screenshot-${index + 1}`}"?`,
         'Delete',
         'Cancel'
     );
@@ -2276,7 +2896,7 @@ function syncUIWithState() {
     if (selectedOption) {
         document.getElementById('output-size-name').textContent = selectedOption.querySelector('.device-option-name').textContent;
         if (activeDevice === 'custom') {
-            document.getElementById('output-size-dims').textContent = `${state.customWidth} × ${state.customHeight}`;
+            document.getElementById('output-size-dims').textContent = `${state.customWidth} × ${state.customHeight} · ${aspectRatioLabel(state.customWidth, state.customHeight)}`;
         } else {
             document.getElementById('output-size-dims').textContent = selectedOption.querySelector('.device-option-size').textContent;
         }
@@ -2381,8 +3001,13 @@ function syncUIWithState() {
     document.querySelectorAll('#text-position button').forEach(btn => {
         btn.classList.toggle('active', btn.dataset.position === layoutSettings.position);
     });
+    document.querySelectorAll('#text-align button').forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.align === (layoutSettings.align || 'center'));
+    });
     document.getElementById('text-offset-y').value = layoutSettings.offsetY;
     document.getElementById('text-offset-y-value').textContent = formatValue(layoutSettings.offsetY) + '%';
+    document.getElementById('text-offset-x').value = layoutSettings.offsetX ?? 50;
+    document.getElementById('text-offset-x-value').textContent = formatValue(layoutSettings.offsetX ?? 50) + '%';
     document.getElementById('line-height').value = layoutSettings.lineHeight;
     document.getElementById('line-height-value').textContent = formatValue(layoutSettings.lineHeight) + '%';
     const currentSubheadline = txt.subheadlines ? (txt.subheadlines[subheadlineLang] || '') : (txt.subheadline || '');
@@ -2431,6 +3056,10 @@ function syncUIWithState() {
     document.getElementById('rotation-3d-y-value').textContent = formatValue(rotation3D.y) + '°';
     document.getElementById('rotation-3d-z').value = rotation3D.z;
     document.getElementById('rotation-3d-z-value').textContent = formatValue(rotation3D.z) + '°';
+    document.getElementById('screen-inset-3d').value = ss.screenInset || 0;
+    document.getElementById('screen-inset-3d-value').textContent = formatValue(ss.screenInset || 0) + '%';
+    document.getElementById('screen-inset-top-3d').value = ss.screenInsetTop || 0;
+    document.getElementById('screen-inset-top-3d-value').textContent = formatValue(ss.screenInsetTop || 0) + '%';
 
     // Hide 2D-only settings in 3D mode, show 3D tip
     document.getElementById('2d-only-settings').style.display = use3D ? 'none' : 'block';
@@ -2577,10 +3206,12 @@ function updateElementProperties() {
     // Type-specific properties
     const textProps = document.getElementById('element-text-properties');
     const iconProps = document.getElementById('element-icon-properties');
+    const graphicProps = document.getElementById('element-graphic-properties');
 
     // Hide all type-specific panels first
     textProps.style.display = 'none';
     if (iconProps) iconProps.style.display = 'none';
+    if (graphicProps) graphicProps.style.display = 'none';
 
     if (el.type === 'text') {
         textProps.style.display = '';
@@ -2624,6 +3255,23 @@ function updateElementProperties() {
         document.getElementById('element-icon-shadow-x-value').textContent = shadow.x + 'px';
         document.getElementById('element-icon-shadow-y').value = shadow.y;
         document.getElementById('element-icon-shadow-y-value').textContent = shadow.y + 'px';
+    } else if (el.type === 'graphic' && graphicProps) {
+        graphicProps.style.display = '';
+        const bg = el.bg || { enabled: false, color: '#ffffff', opacity: 100, padding: 10, radius: 24 };
+        const bgToggle = document.getElementById('element-graphic-bg-toggle');
+        const bgOpts = document.getElementById('element-graphic-bg-options');
+        const bgRow = bgToggle?.closest('.toggle-row');
+        if (bgToggle) bgToggle.classList.toggle('active', bg.enabled);
+        if (bgRow) bgRow.classList.toggle('collapsed', !bg.enabled);
+        if (bgOpts) bgOpts.style.display = bg.enabled ? '' : 'none';
+        document.getElementById('element-graphic-bg-color').value = bg.color;
+        document.getElementById('element-graphic-bg-color-hex').value = bg.color;
+        document.getElementById('element-graphic-bg-opacity').value = bg.opacity;
+        document.getElementById('element-graphic-bg-opacity-value').textContent = bg.opacity + '%';
+        document.getElementById('element-graphic-bg-padding').value = bg.padding;
+        document.getElementById('element-graphic-bg-padding-value').textContent = bg.padding + '%';
+        document.getElementById('element-graphic-bg-radius').value = bg.radius;
+        document.getElementById('element-graphic-bg-radius-value').textContent = bg.radius + 'px';
     }
 }
 
@@ -2765,6 +3413,60 @@ function setupElementEventListeners() {
         });
     }
 
+    // Graphic card background
+    const graphicBgToggle = document.getElementById('element-graphic-bg-toggle');
+    if (graphicBgToggle) {
+        graphicBgToggle.addEventListener('click', () => {
+            const el = getSelectedElement();
+            if (!el || el.type !== 'graphic') return;
+            if (!el.bg) el.bg = { enabled: false, color: '#ffffff', opacity: 100, padding: 10, radius: 24 };
+            el.bg.enabled = !el.bg.enabled;
+            updateElementProperties();
+            updateCanvas();
+        });
+    }
+
+    const bindGraphicBg = (inputId, prop, suffix) => {
+        const input = document.getElementById(inputId);
+        const valEl = document.getElementById(inputId + '-value');
+        if (!input) return;
+        input.addEventListener('input', () => {
+            const el = getSelectedElement();
+            if (!el || el.type !== 'graphic' || !el.bg) return;
+            el.bg[prop] = parseFloat(input.value);
+            if (valEl) valEl.textContent = input.value + suffix;
+            updateCanvas();
+        });
+    };
+    bindGraphicBg('element-graphic-bg-opacity', 'opacity', '%');
+    bindGraphicBg('element-graphic-bg-padding', 'padding', '%');
+    bindGraphicBg('element-graphic-bg-radius', 'radius', 'px');
+
+    const graphicBgColor = document.getElementById('element-graphic-bg-color');
+    const graphicBgColorHex = document.getElementById('element-graphic-bg-color-hex');
+    if (graphicBgColor) {
+        graphicBgColor.addEventListener('input', () => {
+            const el = getSelectedElement();
+            if (el?.type === 'graphic' && el.bg) {
+                el.bg.color = graphicBgColor.value;
+                if (graphicBgColorHex) graphicBgColorHex.value = graphicBgColor.value;
+                updateCanvas();
+            }
+        });
+    }
+    if (graphicBgColorHex) {
+        graphicBgColorHex.addEventListener('change', () => {
+            if (/^#[0-9a-fA-F]{6}$/.test(graphicBgColorHex.value)) {
+                const el = getSelectedElement();
+                if (el?.type === 'graphic' && el.bg) {
+                    el.bg.color = graphicBgColorHex.value;
+                    if (graphicBgColor) graphicBgColor.value = graphicBgColorHex.value;
+                    updateCanvas();
+                }
+            }
+        });
+    }
+
     // Property sliders
     const bindSlider = (id, prop, suffix, parser) => {
         const input = document.getElementById(id);
@@ -2875,6 +3577,9 @@ function setupElementEventListeners() {
 
     // Canvas toolbar (zoom controls, delete)
     setupCanvasToolbar();
+
+    // Auto-capture modal (Playwright server)
+    setupCaptureModal();
 }
 
 function setupElementCanvasDrag() {
@@ -4111,6 +4816,17 @@ function setupEventListeners() {
         }
     });
 
+    // Language prev/next navigation — quick way to flip through generated locales
+    const stepLanguage = (dir) => {
+        const langs = state.projectLanguages;
+        if (!langs.length) return;
+        const i = langs.indexOf(state.currentLanguage);
+        const next = langs[(i + dir + langs.length) % langs.length];
+        switchGlobalLanguage(next);
+    };
+    document.getElementById('lang-prev-btn')?.addEventListener('click', () => stepLanguage(-1));
+    document.getElementById('lang-next-btn')?.addEventListener('click', () => stepLanguage(1));
+
     // Language picker events
     document.getElementById('language-btn').addEventListener('click', (e) => {
         e.stopPropagation();
@@ -4352,12 +5068,12 @@ function setupEventListeners() {
     // Custom size inputs
     document.getElementById('custom-width').addEventListener('input', (e) => {
         state.customWidth = parseInt(e.target.value) || 1290;
-        document.getElementById('output-size-dims').textContent = `${state.customWidth} × ${state.customHeight}`;
+        document.getElementById('output-size-dims').textContent = `${state.customWidth} × ${state.customHeight} · ${aspectRatioLabel(state.customWidth, state.customHeight)}`;
         updateCanvas();
     });
     document.getElementById('custom-height').addEventListener('input', (e) => {
         state.customHeight = parseInt(e.target.value) || 2796;
-        document.getElementById('output-size-dims').textContent = `${state.customWidth} × ${state.customHeight}`;
+        document.getElementById('output-size-dims').textContent = `${state.customWidth} × ${state.customHeight} · ${aspectRatioLabel(state.customWidth, state.customHeight)}`;
         updateCanvas();
     });
 
@@ -4794,9 +5510,24 @@ function setupEventListeners() {
         });
     });
 
+    document.querySelectorAll('#text-align button').forEach(btn => {
+        btn.addEventListener('click', () => {
+            document.querySelectorAll('#text-align button').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            setTextLanguageValue('align', btn.dataset.align);
+            updateCanvas();
+        });
+    });
+
     document.getElementById('text-offset-y').addEventListener('input', (e) => {
         setTextLanguageValue('offsetY', parseInt(e.target.value));
         document.getElementById('text-offset-y-value').textContent = formatValue(e.target.value) + '%';
+        updateCanvas();
+    });
+
+    document.getElementById('text-offset-x').addEventListener('input', (e) => {
+        setTextLanguageValue('offsetX', parseInt(e.target.value));
+        document.getElementById('text-offset-x-value').textContent = formatValue(e.target.value) + '%';
         updateCanvas();
     });
 
@@ -4952,6 +5683,22 @@ function setupEventListeners() {
             setThreeJSRotation(ss.rotation3D.x, ss.rotation3D.y, ss.rotation3D.z);
         }
         updateCanvas(); // Keep export canvas in sync
+    });
+
+    // 3D screen padding (insets the texture inside the phone's screen area so
+    // the model's rounded corners / Dynamic Island don't eat the content)
+    document.getElementById('screen-inset-3d').addEventListener('input', (e) => {
+        setScreenshotSetting('screenInset', parseFloat(e.target.value) || 0);
+        document.getElementById('screen-inset-3d-value').textContent = formatValue(e.target.value) + '%';
+        if (typeof updateScreenTexture === 'function') updateScreenTexture();
+        updateCanvas();
+    });
+
+    document.getElementById('screen-inset-top-3d').addEventListener('input', (e) => {
+        setScreenshotSetting('screenInsetTop', parseFloat(e.target.value) || 0);
+        document.getElementById('screen-inset-top-3d-value').textContent = formatValue(e.target.value) + '%';
+        if (typeof updateScreenTexture === 'function') updateScreenTexture();
+        updateCanvas();
     });
 }
 
@@ -6243,8 +6990,13 @@ function updateTextUI(text) {
     document.querySelectorAll('#text-position button').forEach(btn => {
         btn.classList.toggle('active', btn.dataset.position === layoutSettings.position);
     });
+    document.querySelectorAll('#text-align button').forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.align === (layoutSettings.align || 'center'));
+    });
     document.getElementById('text-offset-y').value = layoutSettings.offsetY;
     document.getElementById('text-offset-y-value').textContent = formatValue(layoutSettings.offsetY) + '%';
+    document.getElementById('text-offset-x').value = layoutSettings.offsetX ?? 50;
+    document.getElementById('text-offset-x-value').textContent = formatValue(layoutSettings.offsetX ?? 50) + '%';
     document.getElementById('line-height').value = layoutSettings.lineHeight;
     document.getElementById('line-height-value').textContent = formatValue(layoutSettings.lineHeight) + '%';
     document.getElementById('subheadline-text').value = subheadlineText;
@@ -6358,7 +7110,7 @@ async function processDesktopImageFile(fileData) {
             if (existingIndex !== -1) {
                 // Found a screenshot with matching base filename
                 const existingScreenshot = state.screenshots[existingIndex];
-                const hasExistingLangImage = existingScreenshot.localizedImages?.[detectedLang]?.image;
+                const hasExistingLangImage = existingScreenshot.localizedImages?.[detectedLang]?.image || existingScreenshot.localizedImages?.[detectedLang]?.src;
 
                 if (hasExistingLangImage) {
                     // There's already an image for this language - show dialog
@@ -6423,7 +7175,7 @@ async function processImageFile(file) {
                 if (existingIndex !== -1) {
                     // Found a screenshot with matching base filename
                     const existingScreenshot = state.screenshots[existingIndex];
-                    const hasExistingLangImage = existingScreenshot.localizedImages?.[detectedLang]?.image;
+                    const hasExistingLangImage = existingScreenshot.localizedImages?.[detectedLang]?.image || existingScreenshot.localizedImages?.[detectedLang]?.src;
 
                     if (hasExistingLangImage) {
                         // There's already an image for this language - show dialog
@@ -6651,7 +7403,7 @@ function updateScreenshotList() {
             ${thumbHtml}
             <div class="screenshot-info">
                 <div class="screenshot-name">${screenshot.name}</div>
-                <div class="screenshot-device">${isTransferTarget ? 'Click source to copy style' : `${screenshot.deviceType} · ${deviceLabels[getScreenshotOutputDevice(screenshot)] || getScreenshotOutputDevice(screenshot)}`}${langFlagsHtml}</div>
+                <div class="screenshot-device">${isTransferTarget ? 'Click source to copy style' : `${screenshot.deviceType} · ${deviceFormatLabel(getScreenshotOutputDevice(screenshot))}`}${langFlagsHtml}</div>
             </div>
             ${buttonsHtml}
         `;
@@ -7120,8 +7872,19 @@ function getCanvasDimensions(screenshot) {
     return deviceDimensions[device] || deviceDimensions['iphone-6.9'];
 }
 
+// Persist state with a trailing debounce — serializing every screenshot's
+// localized images on each input event was the main UI bottleneck.
+let saveStateTimer = null;
+function scheduleSave() {
+    clearTimeout(saveStateTimer);
+    saveStateTimer = setTimeout(saveState, 800);
+}
+window.addEventListener('beforeunload', () => {
+    if (saveStateTimer) { clearTimeout(saveStateTimer); saveState(); }
+});
+
 function updateCanvas() {
-    saveState(); // Persist state on every update
+    scheduleSave();
     const dims = getCanvasDimensions();
     canvas.width = dims.width;
     canvas.height = dims.height;
@@ -7374,7 +8137,20 @@ function slideToScreenshot(newIndex, direction) {
     });
 }
 
-// Renders a screenshot into a target canvas at ITS OWN output format.
+// Side-preview render cache — a preview only needs re-rendering when its own
+// settings/language change, not on every unrelated state update.
+const sidePreviewCache = new Map();
+const SIDEPREVIEW_CACHE_MAX = 14;
+
+function sidePreviewKey(index, screenshot, dims) {
+    return index + '|' + state.currentLanguage + '|' + dims.width + 'x' + dims.height + '|' +
+        JSON.stringify(
+            [screenshot.background, screenshot.screenshot, screenshot.text, screenshot.popouts, screenshot.elements],
+            (k, v) => (k === 'image' ? undefined : k === 'src' && typeof v === 'string' ? 'len' + v.length : v)
+        );
+}
+
+// Renders a screenshot into a target canvas at preview resolution.
 // Returns the display size {displayWidth, displayHeight} for positioning.
 function renderScreenshotToCanvas(index, targetCanvas, targetCtx) {
     const screenshot = state.screenshots[index];
@@ -7382,62 +8158,77 @@ function renderScreenshotToCanvas(index, targetCanvas, targetCtx) {
 
     const dims = getCanvasDimensions(screenshot);
     const previewScale = Math.min(400 / dims.width, 700 / dims.height);
+    const w = Math.max(1, Math.round(dims.width * previewScale));
+    const h = Math.max(1, Math.round(dims.height * previewScale));
 
-    // Get localized image for current language
-    const img = getScreenshotImage(screenshot);
+    const key = sidePreviewKey(index, screenshot, dims);
+    let entry = sidePreviewCache.get(index);
+    if (!entry || entry.key !== key) {
+        const off = document.createElement('canvas');
+        off.width = w;
+        off.height = h;
+        const offCtx = off.getContext('2d');
+        offCtx.setTransform(previewScale, 0, 0, previewScale, 0, 0);
 
-    // Set canvas size (this also clears the canvas)
-    targetCanvas.width = dims.width;
-    targetCanvas.height = dims.height;
-    targetCanvas.style.width = (dims.width * previewScale) + 'px';
-    targetCanvas.style.height = (dims.height * previewScale) + 'px';
+        // Get localized image for current language
+        const img = getScreenshotImage(screenshot);
 
-    // Clear canvas explicitly
-    targetCtx.clearRect(0, 0, dims.width, dims.height);
+        // Draw background for this screenshot
+        const bg = screenshot.background;
+        drawBackgroundToContext(offCtx, dims, bg);
 
-    // Draw background for this screenshot
-    const bg = screenshot.background;
-    drawBackgroundToContext(targetCtx, dims, bg);
+        // Draw noise if enabled
+        if (bg.noise) {
+            drawNoiseToContext(offCtx, dims, bg.noiseIntensity);
+        }
 
-    // Draw noise if enabled
-    if (bg.noise) {
-        drawNoiseToContext(targetCtx, dims, bg.noiseIntensity);
-    }
+        const elements = screenshot.elements || [];
 
-    const elements = screenshot.elements || [];
+        // Elements behind screenshot
+        drawElementsToContext(offCtx, dims, elements, 'behind-screenshot');
 
-    // Elements behind screenshot
-    drawElementsToContext(targetCtx, dims, elements, 'behind-screenshot');
+        // Draw screenshot - 3D if active for this screenshot, otherwise 2D
+        const settings = screenshot.screenshot;
+        const use3D = settings.use3D || false;
 
-    // Draw screenshot - 3D if active for this screenshot, otherwise 2D
-    const settings = screenshot.screenshot;
-    const use3D = settings.use3D || false;
+        if (img) {
+            if (use3D && typeof renderThreeJSForScreenshot === 'function' && phoneModelLoaded) {
+                // Render 3D phone model for this specific screenshot
+                renderThreeJSForScreenshot(off, dims.width, dims.height, index);
+            } else {
+                // Draw 2D screenshot using localized image
+                drawScreenshotToContext(offCtx, dims, img, settings);
+            }
+        }
 
-    if (img) {
-        if (use3D && typeof renderThreeJSForScreenshot === 'function' && phoneModelLoaded) {
-            // Render 3D phone model for this specific screenshot
-            renderThreeJSForScreenshot(targetCanvas, dims.width, dims.height, index);
-        } else {
-            // Draw 2D screenshot using localized image
-            drawScreenshotToContext(targetCtx, dims, img, settings);
+        // Elements above screenshot
+        drawElementsToContext(offCtx, dims, elements, 'above-screenshot');
+
+        // Draw popouts
+        const popouts = screenshot.popouts || [];
+        drawPopoutsToContext(offCtx, dims, popouts, img, settings);
+
+        // Draw text
+        const txt = screenshot.text;
+        drawTextToContext(offCtx, dims, txt);
+
+        // Elements above text
+        drawElementsToContext(offCtx, dims, elements, 'above-text');
+
+        sidePreviewCache.set(index, entry = { key, canvas: off, w, h });
+        while (sidePreviewCache.size > SIDEPREVIEW_CACHE_MAX) {
+            const [oldest] = sidePreviewCache.keys();
+            sidePreviewCache.delete(oldest);
         }
     }
 
-    // Elements above screenshot
-    drawElementsToContext(targetCtx, dims, elements, 'above-screenshot');
+    targetCanvas.width = entry.w;
+    targetCanvas.height = entry.h;
+    targetCanvas.style.width = entry.w + 'px';
+    targetCanvas.style.height = entry.h + 'px';
+    targetCtx.drawImage(entry.canvas, 0, 0);
 
-    // Draw popouts
-    const popouts = screenshot.popouts || [];
-    drawPopoutsToContext(targetCtx, dims, popouts, img, settings);
-
-    // Draw text
-    const txt = screenshot.text;
-    drawTextToContext(targetCtx, dims, txt);
-
-    // Elements above text
-    drawElementsToContext(targetCtx, dims, elements, 'above-text');
-
-    return { displayWidth: dims.width * previewScale, displayHeight: dims.height * previewScale };
+    return { displayWidth: entry.w, displayHeight: entry.h };
 }
 
 function drawBackgroundToContext(context, dims, bg) {
@@ -7506,19 +8297,38 @@ function drawBackgroundToContext(context, dims, bg) {
     }
 }
 
-function drawNoiseToContext(context, dims, intensity) {
-    const imageData = context.getImageData(0, 0, dims.width, dims.height);
-    const data = imageData.data;
-    const noiseAmount = intensity / 100;
-
-    for (let i = 0; i < data.length; i += 4) {
-        const noise = (Math.random() - 0.5) * 255 * noiseAmount;
-        data[i] = Math.max(0, Math.min(255, data[i] + noise));
-        data[i + 1] = Math.max(0, Math.min(255, data[i + 1] + noise));
-        data[i + 2] = Math.max(0, Math.min(255, data[i + 2] + noise));
+// Pre-generated noise tiles — a 256px grayscale tile repeated via pattern is
+// orders of magnitude cheaper than a per-pixel getImageData loop at 4K.
+const noiseTileCache = new Map();
+function getNoiseTile(amp) {
+    const key = Math.max(1, Math.round(amp));
+    let tile = noiseTileCache.get(key);
+    if (!tile) {
+        tile = document.createElement('canvas');
+        tile.width = tile.height = 256;
+        const tc = tile.getContext('2d');
+        const id = tc.createImageData(256, 256);
+        for (let i = 0; i < id.data.length; i += 4) {
+            const v = Math.max(0, Math.min(255, Math.round(128 + (Math.random() - 0.5) * key * 2)));
+            id.data[i] = id.data[i + 1] = id.data[i + 2] = v;
+            id.data[i + 3] = 255;
+        }
+        tc.putImageData(id, 0, 0);
+        noiseTileCache.set(key, tile);
     }
+    return tile;
+}
 
-    context.putImageData(imageData, 0, 0);
+function applyNoise(context, w, h, amp) {
+    context.save();
+    context.globalCompositeOperation = 'overlay';
+    context.fillStyle = context.createPattern(getNoiseTile(amp), 'repeat');
+    context.fillRect(0, 0, w, h);
+    context.restore();
+}
+
+function drawNoiseToContext(context, dims, intensity) {
+    applyNoise(context, dims.width, dims.height, intensity * 1.275);
 }
 
 function drawScreenshotToContext(context, dims, img, settings) {
@@ -7644,7 +8454,17 @@ function drawTextToContext(context, dims, txt) {
         ? dims.height * (layoutSettings.offsetY / 100)
         : dims.height * (1 - layoutSettings.offsetY / 100);
 
-    context.textAlign = 'center';
+    const align = layoutSettings.align || 'center';
+    const offsetX = typeof layoutSettings.offsetX === 'number' ? layoutSettings.offsetX : 50;
+    const anchorX = padding + (dims.width - padding * 2) * (offsetX / 100);
+    const maxTextWidth = align === 'left'
+        ? dims.width - padding - anchorX
+        : align === 'right'
+            ? anchorX - padding
+            : Math.min(anchorX - padding, dims.width - padding - anchorX) * 2;
+    const wrapWidth = Math.max(dims.width * 0.15, maxTextWidth);
+
+    context.textAlign = align;
     context.textBaseline = layoutSettings.position === 'top' ? 'top' : 'bottom';
 
     let currentY = textY;
@@ -7655,7 +8475,7 @@ function drawTextToContext(context, dims, txt) {
         context.font = `${fontStyle} ${txt.headlineWeight} ${headlineLayout.headlineSize}px ${txt.headlineFont}`;
         context.fillStyle = txt.headlineColor;
 
-        const lines = wrapText(context, headline, dims.width - padding * 2);
+        const lines = wrapText(context, headline, wrapWidth);
         const lineHeight = headlineLayout.headlineSize * (layoutSettings.lineHeight / 100);
 
         // For bottom positioning, offset currentY so lines draw correctly
@@ -7667,13 +8487,13 @@ function drawTextToContext(context, dims, txt) {
         lines.forEach((line, i) => {
             const y = currentY + i * lineHeight;
             lastLineY = y;
-            context.fillText(line, dims.width / 2, y);
+            context.fillText(line, anchorX, y);
 
             // Calculate text metrics for decorations
             const textWidth = context.measureText(line).width;
             const fontSize = headlineLayout.headlineSize;
             const lineThickness = Math.max(2, fontSize * 0.05);
-            const x = dims.width / 2 - textWidth / 2;
+            const x = align === 'left' ? anchorX : align === 'right' ? anchorX - textWidth : anchorX - textWidth / 2;
 
             // Draw underline
             if (txt.headlineUnderline) {
@@ -7712,7 +8532,7 @@ function drawTextToContext(context, dims, txt) {
         context.font = `${subFontStyle} ${subWeight} ${subheadlineLayout.subheadlineSize}px ${txt.subheadlineFont || txt.headlineFont}`;
         context.fillStyle = hexToRgba(txt.subheadlineColor, txt.subheadlineOpacity / 100);
 
-        const lines = wrapText(context, subheadline, dims.width - padding * 2);
+        const lines = wrapText(context, subheadline, wrapWidth);
         const subLineHeight = subheadlineLayout.subheadlineSize * 1.4;
 
         // Subheadline starts after headline with gap determined by headline lineHeight
@@ -7724,13 +8544,13 @@ function drawTextToContext(context, dims, txt) {
 
         lines.forEach((line, i) => {
             const y = subY + i * subLineHeight;
-            context.fillText(line, dims.width / 2, y);
+            context.fillText(line, anchorX, y);
 
             // Calculate text metrics for decorations
             const textWidth = context.measureText(line).width;
             const fontSize = subheadlineLayout.subheadlineSize;
             const lineThickness = Math.max(2, fontSize * 0.05);
-            const x = dims.width / 2 - textWidth / 2;
+            const x = align === 'left' ? anchorX : align === 'right' ? anchorX - textWidth : anchorX - textWidth / 2;
 
             // Draw underline (using 'top' baseline for subheadline)
             if (txt.subheadlineUnderline) {
@@ -7805,6 +8625,19 @@ function drawElementsToContext(context, dims, elements, layer) {
         } else if (el.type === 'graphic' && el.image) {
             const aspect = el.image.height / el.image.width;
             const elHeight = elWidth * aspect;
+            if (el.bg?.enabled) {
+                const pad = elWidth * (el.bg.padding || 0) / 100;
+                const bw = elWidth + pad * 2;
+                const bh = elHeight + pad * 2;
+                const radius = Math.min(el.bg.radius || 0, Math.min(bw, bh) / 2);
+                context.save();
+                context.globalAlpha = (el.opacity / 100) * ((el.bg.opacity ?? 100) / 100);
+                context.fillStyle = el.bg.color || '#ffffff';
+                context.beginPath();
+                context.roundRect(-bw / 2, -bh / 2, bw, bh, radius);
+                context.fill();
+                context.restore();
+            }
             context.drawImage(el.image, -elWidth / 2, -elHeight / 2, elWidth, elHeight);
         } else if (el.type === 'text') {
             const elText = getElementText(el);
@@ -8239,7 +9072,17 @@ function drawText() {
         ? dims.height * (layoutSettings.offsetY / 100)
         : dims.height * (1 - layoutSettings.offsetY / 100);
 
-    ctx.textAlign = 'center';
+    const align = layoutSettings.align || 'center';
+    const offsetX = typeof layoutSettings.offsetX === 'number' ? layoutSettings.offsetX : 50;
+    const anchorX = padding + (dims.width - padding * 2) * (offsetX / 100);
+    const maxTextWidth = align === 'left'
+        ? dims.width - padding - anchorX
+        : align === 'right'
+            ? anchorX - padding
+            : Math.min(anchorX - padding, dims.width - padding - anchorX) * 2;
+    const wrapWidth = Math.max(dims.width * 0.15, maxTextWidth);
+
+    ctx.textAlign = align;
     ctx.textBaseline = layoutSettings.position === 'top' ? 'top' : 'bottom';
 
     let currentY = textY;
@@ -8250,7 +9093,7 @@ function drawText() {
         ctx.font = `${fontStyle} ${text.headlineWeight} ${headlineLayout.headlineSize}px ${text.headlineFont}`;
         ctx.fillStyle = text.headlineColor;
 
-        const lines = wrapText(ctx, headline, dims.width - padding * 2);
+        const lines = wrapText(ctx, headline, wrapWidth);
         const lineHeight = headlineLayout.headlineSize * (layoutSettings.lineHeight / 100);
 
         if (layoutSettings.position === 'bottom') {
@@ -8261,14 +9104,14 @@ function drawText() {
         lines.forEach((line, i) => {
             const y = currentY + i * lineHeight;
             lastLineY = y;
-            ctx.fillText(line, dims.width / 2, y);
+            ctx.fillText(line, anchorX, y);
 
             // Calculate text metrics for decorations
             // When textBaseline is 'top', y is at top of text; when 'bottom', y is at bottom
             const textWidth = ctx.measureText(line).width;
             const fontSize = headlineLayout.headlineSize;
             const lineThickness = Math.max(2, fontSize * 0.05);
-            const x = dims.width / 2 - textWidth / 2;
+            const x = align === 'left' ? anchorX : align === 'right' ? anchorX - textWidth : anchorX - textWidth / 2;
 
             // Draw underline
             if (text.headlineUnderline) {
@@ -8307,7 +9150,7 @@ function drawText() {
         ctx.font = `${subFontStyle} ${subWeight} ${subheadlineLayout.subheadlineSize}px ${text.subheadlineFont || text.headlineFont}`;
         ctx.fillStyle = hexToRgba(text.subheadlineColor, text.subheadlineOpacity / 100);
 
-        const lines = wrapText(ctx, subheadline, dims.width - padding * 2);
+        const lines = wrapText(ctx, subheadline, wrapWidth);
         const subLineHeight = subheadlineLayout.subheadlineSize * 1.4;
 
         // Subheadline starts after headline with gap determined by headline lineHeight
@@ -8319,13 +9162,13 @@ function drawText() {
 
         lines.forEach((line, i) => {
             const y = subY + i * subLineHeight;
-            ctx.fillText(line, dims.width / 2, y);
+            ctx.fillText(line, anchorX, y);
 
             // Calculate text metrics for decorations
             const textWidth = ctx.measureText(line).width;
             const fontSize = subheadlineLayout.subheadlineSize;
             const lineThickness = Math.max(2, fontSize * 0.05);
-            const x = dims.width / 2 - textWidth / 2;
+            const x = align === 'left' ? anchorX : align === 'right' ? anchorX - textWidth : anchorX - textWidth / 2;
 
             // Draw underline (using 'top' baseline for subheadline)
             if (text.subheadlineUnderline) {
@@ -8349,18 +9192,7 @@ function drawText() {
 
 function drawNoise() {
     const dims = getCanvasDimensions();
-    const imageData = ctx.getImageData(0, 0, dims.width, dims.height);
-    const data = imageData.data;
-    const intensity = getBackground().noiseIntensity / 100 * 50;
-
-    for (let i = 0; i < data.length; i += 4) {
-        const noise = (Math.random() - 0.5) * intensity;
-        data[i] = Math.min(255, Math.max(0, data[i] + noise));
-        data[i + 1] = Math.min(255, Math.max(0, data[i + 1] + noise));
-        data[i + 2] = Math.min(255, Math.max(0, data[i + 2] + noise));
-    }
-
-    ctx.putImageData(imageData, 0, 0);
+    applyNoise(ctx, dims.width, dims.height, getBackground().noiseIntensity / 100 * 50);
 }
 
 function roundRect(ctx, x, y, width, height, radius) {
@@ -8417,33 +9249,16 @@ function hexToRgba(hex, alpha) {
     return `rgba(${r}, ${g}, ${b}, ${alpha})`;
 }
 
-// Build a filesystem-safe export base name from a screenshot's display name.
-// Falls back to screenshot-N when unnamed; usedNames (Set) dedupes within one export.
+// Export filenames are sequential (screen_01.png, screen_02.png, ...) matching
+// the screenshot list order — stores take them in upload order, and the zero
+// padding keeps alphabetical sorting correct past 9 items.
 function getExportBasename(screenshot, index, usedNames) {
-    const rawName = (screenshot?.name || '').replace(/\.[^.]+$/, '').trim();
-    let base = rawName
-        .replace(/\s+/g, '-')
-        .replace(/[<>:"/\\|?*\x00-\x1f]/g, '')
-        .replace(/\.+$/, '');
-
-    if (!base || rawName === 'Blank Screen') {
-        base = `screenshot-${index + 1}`;
-    }
-
-    if (usedNames) {
-        let candidate = base;
-        let n = 2;
-        while (usedNames.has(candidate.toLowerCase())) {
-            candidate = `${base}-${n++}`;
-        }
-        usedNames.add(candidate.toLowerCase());
-        base = candidate;
-    }
-
-    return base;
+    return `screen_${String(index + 1).padStart(2, '0')}`;
 }
 
 async function exportCurrent() {
+    await preloadImagesForExport();
+    updateCanvas();
     if (state.screenshots.length === 0) {
         await showAppAlert('Please upload a screenshot first', 'info');
         return;
@@ -8530,16 +9345,13 @@ async function exportAllForLanguage(lang) {
     const devicesUsed = new Set(state.screenshots.map(s => getScreenshotOutputDevice(s)));
     const groupByDevice = devicesUsed.size > 1;
 
-    const namesByDevice = new Map();
-    const fileNames = state.screenshots.map((s, i) => {
-        const device = getScreenshotOutputDevice(s);
-        if (!namesByDevice.has(device)) namesByDevice.set(device, new Set());
-        return `${getExportBasename(s, i, namesByDevice.get(device))}.png`;
-    });
+    const fileNames = state.screenshots.map((s, i) => `${getExportBasename(s, i)}.png`);
     const filePath = (i) => {
         const device = getScreenshotOutputDevice(state.screenshots[i]);
         return groupByDevice ? `${device}/${fileNames[i]}` : fileNames[i];
     };
+
+    await preloadImagesForExport();
 
     for (let i = 0; i < state.screenshots.length; i++) {
         state.selectedIndex = i;
@@ -8547,7 +9359,7 @@ async function exportAllForLanguage(lang) {
 
         // Update progress
         const percent = Math.round(((i + 1) / total) * 90); // Reserve 10% for ZIP generation
-        const deviceLabel = deviceLabels[getScreenshotOutputDevice(state.screenshots[i])] || '';
+        const deviceLabel = deviceFormatLabel(getScreenshotOutputDevice(state.screenshots[i]));
         showExportProgress('Exporting...', `Screenshot ${i + 1} of ${total}${deviceLabel ? ` (${deviceLabel})` : ''}`, percent);
 
         await new Promise(resolve => setTimeout(resolve, 100));
@@ -8607,12 +9419,7 @@ async function exportAllLanguages() {
     const devicesUsed = new Set(state.screenshots.map(s => getScreenshotOutputDevice(s)));
     const groupByDevice = devicesUsed.size > 1;
 
-    const namesByDevice = new Map();
-    const fileNames = state.screenshots.map((s, i) => {
-        const device = getScreenshotOutputDevice(s);
-        if (!namesByDevice.has(device)) namesByDevice.set(device, new Set());
-        return `${getExportBasename(s, i, namesByDevice.get(device))}.png`;
-    });
+    const fileNames = state.screenshots.map((s, i) => `${getExportBasename(s, i)}.png`);
     const filePath = (i) => {
         const device = getScreenshotOutputDevice(state.screenshots[i]);
         return groupByDevice ? `${device}/${fileNames[i]}` : fileNames[i];
@@ -8628,6 +9435,8 @@ async function exportAllLanguages() {
             s.text.currentHeadlineLang = lang;
             s.text.currentSubheadlineLang = lang;
         });
+
+        await preloadImagesForExport();
 
         for (let i = 0; i < state.screenshots.length; i++) {
             state.selectedIndex = i;

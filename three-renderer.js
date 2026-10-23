@@ -608,8 +608,10 @@ function createScreenOverlay() {
     console.log('Plane size:', planeWidth.toFixed(4), 'x', planeHeight.toFixed(4));
 }
 
-// Create a rounded corner version of the screenshot
-function createRoundedScreenImage(image, cornerRadius) {
+// Create a rounded corner version of the screenshot. insetPx shrinks the image
+// inside the rounded clip on all sides; insetTopPx adds extra clearance on top
+// (for the model's rounded corner / Dynamic Island overlap).
+function createRoundedScreenImage(image, cornerRadius, insetPx = 0, insetTopPx = 0) {
     const canvas = document.createElement('canvas');
     canvas.width = image.width;
     canvas.height = image.height;
@@ -632,9 +634,13 @@ function createRoundedScreenImage(image, cornerRadius) {
     ctx.quadraticCurveTo(0, 0, r, 0);
     ctx.closePath();
 
-    // Clip to rounded rectangle and draw image
+    // Clip to rounded rectangle and draw image with optional inset
     ctx.clip();
-    ctx.drawImage(image, 0, 0);
+    const x = insetPx;
+    const y = insetPx + insetTopPx;
+    const iw = Math.max(1, w - insetPx * 2);
+    const ih = Math.max(1, h - insetPx * 2 - insetTopPx);
+    ctx.drawImage(image, x, y, iw, ih);
 
     return canvas;
 }
@@ -658,8 +664,11 @@ function updateScreenTexture() {
 
     // Create rounded corner version of the image using device-specific corner radius
     const config = deviceConfigs[currentDeviceModel] || deviceConfigs.iphone;
+    const ss3d = screenshot.screenshot || {};
     const cornerRadius = Math.round(screenshotImage.width * config.cornerRadiusFactor);
-    const roundedImage = createRoundedScreenImage(screenshotImage, cornerRadius);
+    const insetPx = Math.round(screenshotImage.width * (ss3d.screenInset || 0) / 100);
+    const insetTopPx = Math.round(screenshotImage.width * (ss3d.screenInsetTop || 0) / 100);
+    const roundedImage = createRoundedScreenImage(screenshotImage, cornerRadius, insetPx, insetTopPx);
 
     screenTexture = new THREE.Texture(roundedImage);
     screenTexture.needsUpdate = true;
@@ -871,7 +880,9 @@ function renderThreeJSForScreenshot(targetCanvas, width, height, screenshotIndex
     const oldMaterial = screenPlaneToUse ? screenPlaneToUse.material : null;
     if (screenshotImage && screenPlaneToUse) {
         const cornerRadius = Math.round(screenshotImage.width * config.cornerRadiusFactor);
-        const roundedImage = createRoundedScreenImage(screenshotImage, cornerRadius);
+        const insetPx = Math.round(screenshotImage.width * (ss.screenInset || 0) / 100);
+        const insetTopPx = Math.round(screenshotImage.width * (ss.screenInsetTop || 0) / 100);
+        const roundedImage = createRoundedScreenImage(screenshotImage, cornerRadius, insetPx, insetTopPx);
         const newTexture = new THREE.Texture(roundedImage);
         newTexture.needsUpdate = true;
         newTexture.encoding = THREE.sRGBEncoding;

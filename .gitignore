@@ -9,6 +9,15 @@
 
 # Local config (API keys — never commit)
 config.local.js
+tools/.auth/
+
+# Private capture tooling (credentials, LearnMe-specific data — never public)
+tools/accounts.json
+tools/scenarios.json
+tools/seed-demo-user.php
+tools/smoke/
+tools/*.log
+tmp-*.png
 
 # Node
 node_modules/

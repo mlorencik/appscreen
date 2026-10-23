@@ -91,34 +91,70 @@ function detectLanguageFromFilename(filename) {
  * @param {Object} screenshot - The screenshot object
  * @returns {Image|null} - The Image object to use for rendering
  */
+// Decoded image LRU — every localized entry kept both the base64 `src` and a
+// decoded bitmap (~15MB each at phone resolutions). With many screenshots ×
+// languages this blew Chrome's memory; now only ~40 bitmaps stay decoded.
+const decodedImageLRU = new Map();
+const MAX_DECODED_IMAGES = 40;
+
+function touchDecodedImage(entry) {
+    decodedImageLRU.delete(entry);
+    decodedImageLRU.set(entry, true);
+    while (decodedImageLRU.size > MAX_DECODED_IMAGES) {
+        const [oldest] = decodedImageLRU.keys();
+        decodedImageLRU.delete(oldest);
+        if (oldest !== entry && oldest.image) oldest.image = null;
+    }
+}
+
+// Returns a decoded/loading Image for an entry, lazily recreating it from
+// `src` when it was evicted. onload re-renders so late decodes still appear.
+function entryImage(entry) {
+    if (!entry) return null;
+    if (!entry.image && entry.src) {
+        const img = new Image();
+        img.src = entry.src;
+        img.onload = () => updateCanvas();
+        entry.image = img;
+    }
+    if (entry.image) touchDecodedImage(entry);
+    return entry.image || null;
+}
+
 function getScreenshotImage(screenshot) {
     if (!screenshot) return null;
 
     const lang = state.currentLanguage;
+    const localized = screenshot.localizedImages;
+    if (!localized) return screenshot.image || null;
 
     // Try current language first
-    if (screenshot.localizedImages?.[lang]?.image) {
-        return screenshot.localizedImages[lang].image;
-    }
+    let img = entryImage(localized[lang]);
+    if (img) return img;
 
     // Fallback to first available language in project order
     for (const l of state.projectLanguages) {
-        if (screenshot.localizedImages?.[l]?.image) {
-            return screenshot.localizedImages[l].image;
-        }
+        img = entryImage(localized[l]);
+        if (img) return img;
     }
 
     // Fallback to any available language
-    if (screenshot.localizedImages) {
-        for (const l of Object.keys(screenshot.localizedImages)) {
-            if (screenshot.localizedImages[l]?.image) {
-                return screenshot.localizedImages[l].image;
-            }
-        }
+    for (const l of Object.keys(localized)) {
+        img = entryImage(localized[l]);
+        if (img) return img;
     }
 
     // Legacy fallback for old screenshot format
     return screenshot.image || null;
+}
+
+// Awaits decode of every screenshot's image for the current language so
+// export loops draw real pixels instead of still-loading Images.
+async function preloadImagesForExport() {
+    await Promise.all(state.screenshots.map(s => {
+        const img = getScreenshotImage(s);
+        return img && !img.complete ? img.decode().catch(() => {}) : null;
+    }));
 }
 
 /**
@@ -130,7 +166,7 @@ function getAvailableLanguagesForScreenshot(screenshot) {
     if (!screenshot?.localizedImages) return [];
 
     return Object.keys(screenshot.localizedImages).filter(
-        lang => screenshot.localizedImages[lang]?.image
+        lang => screenshot.localizedImages[lang]?.image || screenshot.localizedImages[lang]?.src
     );
 }
 
@@ -144,7 +180,7 @@ function isScreenshotComplete(screenshot) {
     if (state.projectLanguages.length === 0) return true;
 
     return state.projectLanguages.every(
-        lang => screenshot.localizedImages[lang]?.image
+        lang => screenshot.localizedImages[lang]?.image || screenshot.localizedImages[lang]?.src
     );
 }
 
@@ -273,7 +309,8 @@ function updateScreenshotTranslationsList() {
     container.innerHTML = '';
 
     state.projectLanguages.forEach(lang => {
-        const hasImage = screenshot.localizedImages?.[lang]?.image;
+        const entry = screenshot.localizedImages?.[lang];
+        const hasImage = entry?.image || entry?.src;
         const flag = languageFlags[lang] || '🏳️';
         const name = languageNames[lang] || lang.toUpperCase();
 
@@ -286,11 +323,13 @@ function updateScreenshotTranslationsList() {
             thumbCanvas.width = 40;
             thumbCanvas.height = 86;
             const ctx = thumbCanvas.getContext('2d');
-            const img = screenshot.localizedImages[lang].image;
-            const scale = Math.min(40 / img.width, 86 / img.height);
-            const w = img.width * scale;
-            const h = img.height * scale;
-            ctx.drawImage(img, (40 - w) / 2, (86 - h) / 2, w, h);
+            const img = entryImage(screenshot.localizedImages[lang]);
+            if (img?.complete && img.naturalWidth) {
+                const scale = Math.min(40 / img.width, 86 / img.height);
+                const w = img.width * scale;
+                const h = img.height * scale;
+                ctx.drawImage(img, (40 - w) / 2, (86 - h) / 2, w, h);
+            }
 
             item.innerHTML = `
                 <div class="translation-thumb">
