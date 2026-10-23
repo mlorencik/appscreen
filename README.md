@@ -14,8 +14,10 @@ A free, open-source tool for creating beautiful App Store screenshots with custo
 ## Features
 
 ### Output & Export
-- **Multiple Output Sizes**: iPhone 6.9", 6.7", 6.5", 5.5" and iPad 12.9", 11" App Store requirements, plus custom sizes
-- **Batch Export**: Export all screenshots at once as a ZIP file
+- **Multiple Output Sizes**: iPhone 6.9", 6.7", 6.5", 5.5" and iPad 12.9", 11" App Store requirements, Android phone/tablet, Google Play Feature Graphic, Open Graph, Twitter/X Card, Website Hero, Landing Page formats, plus custom sizes
+- **Per-Screenshot Output Format**: Each screenshot can target a different device — mixed-format exports are grouped into per-format folders inside the ZIP
+- **Batch Export**: Export all screenshots at once as a ZIP, organized by `language/format/`
+- **Sequential Filenames**: Exports are named `screen_01.png`, `screen_02.png`, … matching the screenshot order, so store uploads keep their sequence
 - **Per-Screenshot Settings**: Each screenshot can have its own background, device settings, and text
 
 ### Backgrounds
@@ -27,10 +29,11 @@ A free, open-source tool for creating beautiful App Store screenshots with custo
 
 ### Device Mockups
 - **2D Mode**: Position, scale, rotate, and adjust corner radius of screenshots
-- **3D Mode**: Interactive iPhone 15 Pro Max 3D mockup with drag-to-rotate
+- **3D Mode**: Interactive iPhone 15 Pro Max and Samsung Galaxy S25 Ultra 3D mockups with drag-to-rotate and rounded-corner inset controls
 - **Position Presets**: Centered, bleed, tilt left/right, perspective, and more
 - **Shadow Effects**: Customizable drop shadows with color, blur, opacity, and offset
 - **Border Effects**: Add borders around screenshots with adjustable width and opacity
+- **Graphic Elements & Popouts**: Overlay badges, shapes, and cropped screenshot popouts — with optional card backgrounds behind transparent elements
 
 ### Text Overlays
 - **Headlines & Subheadlines**: Separate controls with enable/disable toggles
@@ -38,6 +41,7 @@ A free, open-source tool for creating beautiful App Store screenshots with custo
 - **Text Styling**: Font weight, italic, underline, strikethrough options
 - **Positioning**: Top, center, or bottom placement with offset control
 - **Line Height**: Adjustable spacing for multi-line text
+- **Magical Titles**: AI-generated headline suggestions via your configured provider
 
 ### Multi-Language Support
 - **Multiple Languages**: Add translations for any language
@@ -50,15 +54,26 @@ A free, open-source tool for creating beautiful App Store screenshots with custo
 
 ### Project Management
 - **Multiple Projects**: Create, rename, and delete projects
+- **Project Backup**: Export/import full projects as portable backup files
 - **Auto-Save**: All changes saved automatically to browser storage
 - **Screenshot Count**: See screenshot counts in project selector
 
+### Auto-Capture (Playwright)
+- **Live Page Capture**: `tools/capture-server.js` captures real, authenticated app pages into localized screenshots — no manual screenshots needed
+- **Auth Profiles**: Saved login states (headless scripted login via `tools/accounts.json`, or a headed window for manual login)
+- **Scenario Catalog**: `tools/scenarios.json` (gitignored) drives the Scenario picker — each scenario fills the URL and scripted steps (`goto`, `click`, `fill`, `eval`, `apiFetch`, `evalFile`) to reach populated screen states
+- **Robust Capture**: Navigation retries, content-settle and skeleton-loader waits, blank/gray screenshot detection, automatic retry of timed-out locales, and manual retry that merges results into the same screenshot
+- **Per-Language Retake**: Re-capture a single language into an existing screenshot without rerunning the batch
+
 ### User Interface
 - **Dark Theme**: Easy on the eyes for extended editing sessions
-- **Side Preview Carousel**: See adjacent screenshots while editing
-- **Drag & Drop**: Reorder screenshots by dragging
+- **Side Preview Carousel**: See adjacent screenshots while editing, with sliding transitions
+- **Drag & Drop**: Reorder screenshots by dragging, or drag the canvas to navigate between screens
+- **Zoom & Pan Toolbar**: Zoom into the preview and pan around the canvas
+- **Precise Sliders**: `−`/`+` step buttons next to every slider for exact values, plus one-click reset
 - **Collapsible Sections**: Clean UI with expandable settings panels
 - **Tab Persistence**: Remembers your active tab between sessions
+- **Performance-Optimized**: Cached side previews, debounced saves, and lazy image decoding keep the editor fast even with many screenshots and languages
 
 ## Getting Started
 
@@ -166,6 +181,19 @@ To use the AI-powered translation feature:
 
 Your API key is stored locally in your browser and only sent to the respective AI provider's API.
 
+## Auto-Capture
+
+The bundled Playwright server captures real app pages into localized screenshots:
+
+```bash
+node tools/capture-server.js   # or start-capture.bat
+```
+
+1. Create `tools/accounts.json` from `tools/accounts.example.json` with your credentials (gitignored, never committed)
+2. In the app, click **Auto-capture**, log in once to save an auth profile, then pick a scenario or enter a custom URL
+3. Capture runs across all project languages — results land as per-language screenshot images
+4. Failed locales can be retried and merged into the same screenshot
+
 ## Tech Stack
 
 - Vanilla JavaScript (no frameworks)
@@ -175,6 +203,7 @@ Your API key is stored locally in your browser and only sent to the respective A
 - JSZip for batch export
 - Google Fonts API for font picker
 - Claude/OpenAI/Google APIs for translations
+- Playwright for automated live-page capture
 - Docker + nginx for containerized deployment
 
 ## Apps Using This Project
